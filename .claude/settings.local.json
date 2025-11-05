@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\Users\\andms\\AppData\\Local\\Programs\\Python\" /b)",
+      "Bash(C:/Users/andms/AppData/Local/Programs/Python/Python311-32/python.exe:*)",
+      "Bash(cmd /c \"rmdir /s /q venv\")",
+      "Bash(cmd /c \"rmdir /s /q venv && C:\\Users\\andms\\AppData\\Local\\Programs\\Python\\Python311-32\\python.exe -m venv venv\")",
+      "Bash(git config:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

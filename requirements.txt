@@ -1,24 +1,24 @@
-# 키움증권 API
+# Kiwoom API
 PyQt5==5.15.10
 PyQtWebEngine==5.15.6
 
-# 데이터베이스
+# Database
 SQLAlchemy==2.0.23
-psycopg2-binary==2.9.9  # PostgreSQL 사용시
+psycopg2-binary==2.9.9
 
-# 데이터 처리
+# Data Processing
 pandas==2.1.3
 numpy==1.26.2
 
-# 백테스팅
-backtrader==1.9.78.123  # Optional: 고급 백테스팅
+# Backtesting
+backtrader==1.9.78.123
 
-# 유틸리티
+# Utilities
 python-dotenv==1.0.0
 
-# 시각화 (Optional)
+# Visualization
 matplotlib==3.8.2
 plotly==5.18.0
 
-# 기타
+# Others
 requests==2.31.0

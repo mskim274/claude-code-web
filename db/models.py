@@ -20,8 +20,8 @@ class Stock(Base):
     sector = Column(String(50), comment='업종')
     listing_date = Column(Date, comment='상장일')
 
-    created_at = Column(DateTime, default=datetime.now, comment='생성일시')
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='수정일시')
+    created_at = Column(DateTime, default=lambda: datetime.now(), comment='생성일시')
+    updated_at = Column(DateTime, default=lambda: datetime.now(), onupdate=lambda: datetime.now(), comment='수정일시')
 
     # Relationships
     daily_prices = relationship("DailyPrice", back_populates="stock", cascade="all, delete-orphan")
@@ -55,7 +55,7 @@ class DailyPrice(Base):
     adj_close = Column(Float, comment='수정종가')
     adj_factor = Column(Float, default=1.0, comment='수정비율')
 
-    created_at = Column(DateTime, default=datetime.now, comment='생성일시')
+    created_at = Column(DateTime, default=lambda: datetime.now(), comment='생성일시')
 
     # Relationship
     stock = relationship("Stock", back_populates="daily_prices")
@@ -85,7 +85,7 @@ class MinutePrice(Base):
     close = Column(Integer, nullable=False, comment='종가')
     volume = Column(BigInteger, nullable=False, comment='거래량')
 
-    created_at = Column(DateTime, default=datetime.now, comment='생성일시')
+    created_at = Column(DateTime, default=lambda: datetime.now(), comment='생성일시')
 
     # Relationship
     stock = relationship("Stock", back_populates="minute_prices")
@@ -123,7 +123,7 @@ class InvestorTrading(Base):
     individual_sell = Column(BigInteger, default=0, comment='개인 매도량')
     individual_net = Column(BigInteger, default=0, comment='개인 순매수')
 
-    created_at = Column(DateTime, default=datetime.now, comment='생성일시')
+    created_at = Column(DateTime, default=lambda: datetime.now(), comment='생성일시')
 
     # Indexes
     __table_args__ = (
@@ -166,7 +166,7 @@ class StockInfo(Base):
     high_52w_date = Column(Date, comment='52주 최고가 날짜')
     low_52w_date = Column(Date, comment='52주 최저가 날짜')
 
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='수정일시')
+    updated_at = Column(DateTime, default=lambda: datetime.now(), onupdate=lambda: datetime.now(), comment='수정일시')
 
     # Relationship
     stock = relationship("Stock", back_populates="stock_info")
@@ -189,7 +189,7 @@ class CollectionLog(Base):
     records_collected = Column(Integer, default=0, comment='수집된 레코드 수')
     error_message = Column(String(500), comment='에러 메시지')
 
-    started_at = Column(DateTime, default=datetime.now, comment='수집 시작 시간')
+    started_at = Column(DateTime, default=lambda: datetime.now(), comment='수집 시작 시간')
     completed_at = Column(DateTime, comment='수집 완료 시간')
 
     def __repr__(self):

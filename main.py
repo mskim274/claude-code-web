@@ -15,6 +15,8 @@ from backtest.strategy import MovingAverageCrossStrategy
 from db.database import init_db, session_scope
 from db.models import Stock
 from utils.logger import setup_logger
+
+
 from config.kiwoom_config import KiwoomConfig
 
 logger = setup_logger('main')
