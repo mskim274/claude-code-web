@@ -68,8 +68,8 @@ class StockCollector:
                         if not name:
                             continue
 
-                        # 상장일 조회
-                        listing_date = self.api.get_master_listed_stock_date(code)
+                        # 상장일 조회 (일단 None으로 처리 - 나중에 별도로 수집)
+                        listing_date = None
 
                         # DB에 저장
                         stock = session.query(Stock).filter_by(code=code).first()
@@ -77,7 +77,8 @@ class StockCollector:
                             # 업데이트
                             stock.name = name
                             stock.market = market_name
-                            stock.listing_date = listing_date
+                            if listing_date:
+                                stock.listing_date = listing_date
                         else:
                             # 신규 생성
                             stock = Stock(
