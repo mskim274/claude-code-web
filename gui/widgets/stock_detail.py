@@ -209,8 +209,12 @@ class StockDetailWidget(QWidget):
                     self._clear_data_display()
                     return
 
+                # Extract all data from ORM objects before calling methods that open new sessions
+                # (session_scope uses scoped_session, so nested calls share the same session)
+
                 # Data statistics
-                self.daily_count_label.setText(f"{len(prices):,}개")
+                price_count = len(prices)
+                self.daily_count_label.setText(f"{price_count:,}개")
 
                 oldest_date = min(p.date for p in prices)
                 newest_date = max(p.date for p in prices)
@@ -227,11 +231,12 @@ class StockDetailWidget(QWidget):
                 # Data quality (simple: check for gaps)
                 total_days = (newest_date - oldest_date).days
                 expected_days = total_days * 5 / 7  # Rough estimate (weekdays)
-                quality_pct = (len(prices) / expected_days * 100) if expected_days > 0 else 0
+                quality_pct = (price_count / expected_days * 100) if expected_days > 0 else 0
                 self.data_quality_label.setText(f"{quality_pct:.1f}%")
 
                 # Price statistics
-                self.current_price_label.setText(f"{latest_price.close:,}원")
+                current_price = latest_price.close
+                self.current_price_label.setText(f"{current_price:,}원")
 
                 # 52-week high/low
                 year_ago = newest_date.replace(year=newest_date.year - 1)
@@ -250,11 +255,25 @@ class StockDetailWidget(QWidget):
                     self.low_52w_label.setText("-")
                     self.avg_volume_label.setText("-")
 
-                # Update chart
-                self.update_chart()
+                # Extract price data for table (convert to plain dicts)
+                price_data_list = []
+                for price in prices[:50]:
+                    price_data_list.append({
+                        'date': price.date,
+                        'open': price.open,
+                        'high': price.high,
+                        'low': price.low,
+                        'close': price.close,
+                        'volume': price.volume,
+                        'trading_value': price.trading_value if price.trading_value else 0
+                    })
 
-                # Update price table (show recent 50 days)
-                self._update_price_table(prices[:50])
+            # Session closed here - now safe to call methods that open new sessions
+            # Update chart (opens new session internally)
+            self.update_chart()
+
+            # Update price table with extracted data
+            self._update_price_table(price_data_list)
 
         except Exception as e:
             QMessageBox.critical(self, "오류", f"데이터 로드 실패: {e}")
@@ -320,22 +339,26 @@ class StockDetailWidget(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "오류", f"차트 업데이트 실패: {e}")
 
-    def _update_price_table(self, prices):
-        """Update price data table"""
-        self.price_table.setRowCount(len(prices))
+    def _update_price_table(self, price_data_list):
+        """Update price data table
 
-        for row, price in enumerate(prices):
-            self.price_table.setItem(row, 0, QTableWidgetItem(
-                price.date.strftime('%Y-%m-%d')
-            ))
-            self.price_table.setItem(row, 1, QTableWidgetItem(f"{price.open:,}"))
-            self.price_table.setItem(row, 2, QTableWidgetItem(f"{price.high:,}"))
-            self.price_table.setItem(row, 3, QTableWidgetItem(f"{price.low:,}"))
-            self.price_table.setItem(row, 4, QTableWidgetItem(f"{price.close:,}"))
-            self.price_table.setItem(row, 5, QTableWidgetItem(f"{price.volume:,}"))
+        Args:
+            price_data_list: List of dicts with price data (not ORM objects)
+        """
+        self.price_table.setRowCount(len(price_data_list))
 
-            trading_value = price.trading_value if price.trading_value else 0
-            self.price_table.setItem(row, 6, QTableWidgetItem(f"{trading_value:,}"))
+        for row, price_data in enumerate(price_data_list):
+            # price_data is a dict with keys: date, open, high, low, close, volume, trading_value
+            date_obj = price_data['date']
+            date_str = date_obj.strftime('%Y-%m-%d') if hasattr(date_obj, 'strftime') else str(date_obj)
+
+            self.price_table.setItem(row, 0, QTableWidgetItem(date_str))
+            self.price_table.setItem(row, 1, QTableWidgetItem(f"{price_data['open']:,}"))
+            self.price_table.setItem(row, 2, QTableWidgetItem(f"{price_data['high']:,}"))
+            self.price_table.setItem(row, 3, QTableWidgetItem(f"{price_data['low']:,}"))
+            self.price_table.setItem(row, 4, QTableWidgetItem(f"{price_data['close']:,}"))
+            self.price_table.setItem(row, 5, QTableWidgetItem(f"{price_data['volume']:,}"))
+            self.price_table.setItem(row, 6, QTableWidgetItem(f"{price_data['trading_value']:,}"))
 
     def _clear_data_display(self):
         """Clear all data displays"""
