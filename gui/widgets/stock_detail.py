@@ -220,8 +220,8 @@ class StockDetailWidget(QWidget):
 
                 latest_price = prices[0]
                 self.last_update_label.setText(
-                    latest_price.updated_at.strftime('%Y-%m-%d %H:%M')
-                    if latest_price.updated_at else "-"
+                    latest_price.created_at.strftime('%Y-%m-%d %H:%M')
+                    if latest_price.created_at else "-"
                 )
 
                 # Data quality (simple: check for gaps)
