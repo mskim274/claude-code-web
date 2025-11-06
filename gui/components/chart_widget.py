@@ -36,8 +36,8 @@ class ChartWidget(QWidget):
         ax2 = self.figure.add_subplot(2, 1, 2, sharex=ax1)
 
         # Candlestick chart
-        for idx, row in df.iterrows():
-            date_num = idx
+        for i, (idx, row) in enumerate(df.iterrows()):
+            date_num = i  # Use numeric index instead of date
 
             color = 'red' if row['close'] >= row['open'] else 'blue'
 
@@ -85,15 +85,24 @@ class ChartWidget(QWidget):
         self.figure.clear()
         ax = self.figure.add_subplot(1, 1, 1)
 
+        # Use numeric index for plotting
+        x_values = range(len(df))
         for col in columns:
             if col in df.columns:
-                ax.plot(df.index, df[col], label=col)
+                ax.plot(x_values, df[col], label=col)
 
         ax.set_xlabel('Date')
         ax.set_ylabel('Value')
         ax.set_title(title)
         ax.legend()
         ax.grid(True, alpha=0.3)
+
+        # Format x-axis with dates
+        if hasattr(df.index, 'strftime'):
+            date_labels = df.index.strftime('%Y-%m-%d')
+            tick_positions = range(0, len(df), max(1, len(df) // 10))
+            ax.set_xticks(tick_positions)
+            ax.set_xticklabels([date_labels[i] for i in tick_positions], rotation=45)
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -109,7 +118,9 @@ class ChartWidget(QWidget):
         ax1 = self.figure.add_subplot(2, 1, 1)
         equity = results['equity_curve']
 
-        ax1.plot(equity.index, equity['portfolio_value'], label='Portfolio Value', linewidth=2)
+        # Use numeric index for plotting
+        x_values = range(len(equity))
+        ax1.plot(x_values, equity['portfolio_value'], label='Portfolio Value', linewidth=2)
         ax1.axhline(y=results['initial_capital'], color='gray', linestyle='--', label='Initial Capital')
 
         ax1.set_ylabel('Portfolio Value')
@@ -121,10 +132,17 @@ class ChartWidget(QWidget):
         ax2 = self.figure.add_subplot(2, 1, 2, sharex=ax1)
 
         if 'drawdown' in equity.columns:
-            ax2.fill_between(equity.index, equity['drawdown'], 0, color='red', alpha=0.3)
+            ax2.fill_between(x_values, equity['drawdown'], 0, color='red', alpha=0.3)
             ax2.set_ylabel('Drawdown (%)')
             ax2.set_xlabel('Date')
             ax2.grid(True, alpha=0.3)
+
+        # Format x-axis with dates
+        if hasattr(equity.index, 'strftime'):
+            date_labels = equity.index.strftime('%Y-%m-%d')
+            tick_positions = range(0, len(equity), max(1, len(equity) // 10))
+            ax2.set_xticks(tick_positions)
+            ax2.set_xticklabels([date_labels[i] for i in tick_positions], rotation=45)
 
         self.figure.tight_layout()
         self.canvas.draw()
