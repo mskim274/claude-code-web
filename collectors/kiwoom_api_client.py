@@ -93,8 +93,9 @@ class KiwoomAPIClient:
 
             return response
 
-        except socket.timeout:
-            logger.error(f"Request timeout after 30 seconds: {request.get('cmd', 'unknown')}")
+        except (socket.timeout, ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
+            error_type = type(e).__name__
+            logger.error(f"{error_type}: {e}")
             logger.warning("Attempting to reconnect...")
 
             # 소켓 재연결 시도
@@ -104,7 +105,7 @@ class KiwoomAPIClient:
                 pass
 
             self._connect()
-            raise TimeoutError("API 요청 시간 초과 (30초) - 재연결 완료")
+            raise ConnectionError(f"연결 재설정 완료 ({error_type})")
         except Exception as e:
             logger.error(f"Request error: {e}")
             raise
@@ -124,12 +125,17 @@ class KiwoomAPIClient:
     def logout(self):
         """로그아웃"""
         logger.info("Requesting logout...")
-        response = self._send_request({'cmd': 'logout'})
+        try:
+            response = self._send_request({'cmd': 'logout'})
 
-        if response.get('success'):
-            logger.info("Logout successful")
-        else:
-            logger.error(f"Logout failed: {response.get('message')}")
+            if response.get('success'):
+                logger.info("Logout successful")
+            else:
+                logger.error(f"Logout failed: {response.get('message')}")
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
+            logger.warning(f"Connection already closed during logout: {e}")
+        except Exception as e:
+            logger.warning(f"Logout error (ignored): {e}")
 
     def get_code_list_by_market(self, market_code):
         """

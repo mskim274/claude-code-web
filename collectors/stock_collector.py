@@ -250,30 +250,48 @@ class StockCollector:
         logger.info(f"Starting collection for {total} stocks ({years} years)")
 
         for idx, (code, name) in enumerate(stock_codes, 1):
-            try:
-                logger.info(f"[{idx}/{total}] Processing {name} ({code})")
-                records = self.collect_daily_price(code, years)
+            retry_count = 0
+            max_retries = 1
 
-                if records > 0:
-                    success_count += 1
-                elif records == 0:
-                    skipped_count += 1  # 이미 데이터가 있음
-                else:
+            while retry_count <= max_retries:
+                try:
+                    if retry_count == 0:
+                        logger.info(f"[{idx}/{total}] Processing {name} ({code})")
+                    else:
+                        logger.info(f"[{idx}/{total}] Retrying {name} ({code}) - attempt {retry_count + 1}")
+
+                    records = self.collect_daily_price(code, years)
+
+                    if records > 0:
+                        success_count += 1
+                    elif records == 0:
+                        skipped_count += 1  # 이미 데이터가 있음
+                    else:
+                        failed_count += 1
+
+                    # 진행률 로그
+                    if idx % 10 == 0:
+                        progress = (idx / total) * 100
+                        logger.info(f"Progress: {progress:.1f}% ({idx}/{total}), Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
+
+                    break  # 성공하면 루프 탈출
+
+                except (ConnectionError, TimeoutError) as e:
+                    error_type = type(e).__name__
+                    logger.warning(f"{error_type} processing {code}: {e}")
+
+                    if retry_count < max_retries:
+                        logger.info(f"Reconnected, retrying {code}...")
+                        retry_count += 1
+                    else:
+                        logger.error(f"Failed after {max_retries + 1} attempts for {code}")
+                        failed_count += 1
+                        break
+
+                except Exception as e:
+                    logger.error(f"Error processing {code}: {e}")
                     failed_count += 1
-
-                # 진행률 로그
-                if idx % 10 == 0:
-                    progress = (idx / total) * 100
-                    logger.info(f"Progress: {progress:.1f}% ({idx}/{total}), Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
-
-            except TimeoutError as e:
-                logger.error(f"Timeout processing {code}: {e}")
-                failed_count += 1
-                continue
-            except Exception as e:
-                logger.error(f"Error processing {code}: {e}")
-                failed_count += 1
-                continue
+                    break
 
         logger.info(f"Collection completed: Success={success_count}, Skipped={skipped_count}, Failed={failed_count}, Total={total}")
         return {
