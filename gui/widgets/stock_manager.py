@@ -15,6 +15,7 @@ class StockManagerWidget(QWidget):
     """Widget for managing stock list"""
 
     collect_stock_data = pyqtSignal(str)  # stock_code
+    view_chart_requested = pyqtSignal(str)  # stock_code
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -135,9 +136,7 @@ class StockManagerWidget(QWidget):
         """View stock chart"""
         code, name = self.stock_table.get_selected_stock()
         if code:
-            # Switch to chart viewer tab
-            # This will be implemented in main window
-            pass
+            self.view_chart_requested.emit(code)
 
     def on_collect_data(self):
         """Collect data for selected stock"""

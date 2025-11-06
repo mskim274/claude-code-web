@@ -135,6 +135,7 @@ class MainWindow(QMainWindow):
 
         # Stock manager actions
         self.stock_manager.collect_stock_data.connect(self.collect_single_stock)
+        self.stock_manager.view_chart_requested.connect(self.view_stock_chart)
 
         # Settings theme change
         self.settings.theme_changed.connect(self.on_theme_changed)
@@ -144,6 +145,12 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentWidget(self.data_collector)
         self.data_collector.stock_code_input.setText(stock_code)
         self.statusBar.showMessage(f"{stock_code} 데이터 수집 준비 완료")
+
+    def view_stock_chart(self, stock_code: str):
+        """View chart for selected stock"""
+        self.tabs.setCurrentWidget(self.chart_viewer)
+        self.chart_viewer.set_stock_code(stock_code)
+        self.statusBar.showMessage(f"{stock_code} 차트 로드 완료")
 
     def toggle_theme(self):
         """Toggle between light and dark theme"""
