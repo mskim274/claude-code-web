@@ -94,8 +94,17 @@ class KiwoomAPIClient:
             return response
 
         except socket.timeout:
-            logger.error(f"Request timeout after 30 seconds: {request.get('command', 'unknown')}")
-            raise TimeoutError("API 요청 시간 초과 (30초)")
+            logger.error(f"Request timeout after 30 seconds: {request.get('cmd', 'unknown')}")
+            logger.warning("Attempting to reconnect...")
+
+            # 소켓 재연결 시도
+            try:
+                self.socket.close()
+            except:
+                pass
+
+            self._connect()
+            raise TimeoutError("API 요청 시간 초과 (30초) - 재연결 완료")
         except Exception as e:
             logger.error(f"Request error: {e}")
             raise

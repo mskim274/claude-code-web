@@ -215,6 +215,8 @@ class KiwoomAPIServer:
 
     def _comm_rq_data(self, rqname, trcode, prev_next, screen_no):
         """TR 요청"""
+        from PyQt5.QtCore import QTimer
+
         self._wait_for_rate_limit()
 
         ret = self.ocx.dynamicCall(
@@ -224,8 +226,22 @@ class KiwoomAPIServer:
 
         if ret == 0:
             self.request_event_loop = QEventLoop()
+
+            # 타임아웃 타이머 설정 (25초)
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda: self.request_event_loop.quit())
+            timer.start(25000)  # 25초
+
             self.request_event_loop.exec_()
-            return True
+
+            # 타임아웃 확인
+            if timer.isActive():
+                timer.stop()
+                return True
+            else:
+                logger.warning(f"Request timeout for {rqname}")
+                return False
         else:
             logger.error(f"CommRqData failed: {ret}")
             return False
