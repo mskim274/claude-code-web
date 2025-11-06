@@ -66,6 +66,7 @@ class KiwoomAPIClient:
         for i in range(max_retries):
             try:
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.socket.settimeout(30.0)  # 30초 타임아웃 설정
                 self.socket.connect((self.host, self.port))
                 logger.info(f"Connected to Kiwoom API Server at {self.host}:{self.port}")
                 return
@@ -92,6 +93,9 @@ class KiwoomAPIClient:
 
             return response
 
+        except socket.timeout:
+            logger.error(f"Request timeout after 30 seconds: {request.get('command', 'unknown')}")
+            raise TimeoutError("API 요청 시간 초과 (30초)")
         except Exception as e:
             logger.error(f"Request error: {e}")
             raise

@@ -235,7 +235,7 @@ class StockCollector:
         """
         if not self.is_logged_in:
             logger.error("Not logged in")
-            return {'success': 0, 'failed': 0, 'total': 0}
+            return {'success': 0, 'skipped': 0, 'failed': 0, 'total': 0}
 
         # 종목 리스트 조회
         with session_scope() as session:
@@ -244,6 +244,7 @@ class StockCollector:
 
         total = len(stock_codes)
         success_count = 0
+        skipped_count = 0
         failed_count = 0
 
         logger.info(f"Starting collection for {total} stocks ({years} years)")
@@ -255,24 +256,32 @@ class StockCollector:
 
                 if records > 0:
                     success_count += 1
+                elif records == 0:
+                    skipped_count += 1  # 이미 데이터가 있음
                 else:
                     failed_count += 1
 
                 # 진행률 로그
                 if idx % 10 == 0:
                     progress = (idx / total) * 100
-                    logger.info(f"Progress: {progress:.1f}% ({idx}/{total}), Success: {success_count}, Failed: {failed_count}")
+                    logger.info(f"Progress: {progress:.1f}% ({idx}/{total}), Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
 
+            except TimeoutError as e:
+                logger.error(f"Timeout processing {code}: {e}")
+                failed_count += 1
+                continue
             except Exception as e:
                 logger.error(f"Error processing {code}: {e}")
                 failed_count += 1
                 continue
 
-        logger.info(f"Collection completed: Success={success_count}, Failed={failed_count}, Total={total}")
+        logger.info(f"Collection completed: Success={success_count}, Skipped={skipped_count}, Failed={failed_count}, Total={total}")
         return {
             'success': success_count,
+            'skipped': skipped_count,
             'failed': failed_count,
-            'total': total
+            'total': total,
+            'total_records': success_count + skipped_count
         }
 
     def collect_stock_info(self, stock_code):
