@@ -12,6 +12,7 @@ from gui.widgets.stock_manager import StockManagerWidget
 from gui.widgets.data_collector import DataCollectorWidget
 from gui.widgets.backtest_panel import BacktestPanelWidget
 from gui.widgets.chart_viewer import ChartViewerWidget
+from gui.widgets.stock_detail import StockDetailWidget
 from gui.widgets.settings import SettingsWidget
 from gui.utils.theme import Theme
 from db.database import init_db
@@ -47,6 +48,7 @@ class MainWindow(QMainWindow):
         # Create widgets
         self.dashboard = DashboardWidget()
         self.stock_manager = StockManagerWidget()
+        self.stock_detail = StockDetailWidget()
         self.data_collector = DataCollectorWidget()
         self.backtest_panel = BacktestPanelWidget()
         self.chart_viewer = ChartViewerWidget()
@@ -55,6 +57,7 @@ class MainWindow(QMainWindow):
         # Add tabs
         self.tabs.addTab(self.dashboard, "대시보드")
         self.tabs.addTab(self.stock_manager, "종목 관리")
+        self.tabs.addTab(self.stock_detail, "종목 상세")
         self.tabs.addTab(self.data_collector, "데이터 수집")
         self.tabs.addTab(self.backtest_panel, "백테스트")
         self.tabs.addTab(self.chart_viewer, "차트 뷰어")
@@ -147,10 +150,10 @@ class MainWindow(QMainWindow):
         self.statusBar.showMessage(f"{stock_code} 데이터 수집 준비 완료")
 
     def view_stock_chart(self, stock_code: str):
-        """View chart for selected stock"""
-        self.tabs.setCurrentWidget(self.chart_viewer)
-        self.chart_viewer.set_stock_code(stock_code)
-        self.statusBar.showMessage(f"{stock_code} 차트 로드 완료")
+        """View comprehensive stock details"""
+        self.tabs.setCurrentWidget(self.stock_detail)
+        self.stock_detail.set_stock_code(stock_code)
+        self.statusBar.showMessage(f"{stock_code} 상세 정보 로드 완료")
 
     def toggle_theme(self):
         """Toggle between light and dark theme"""
