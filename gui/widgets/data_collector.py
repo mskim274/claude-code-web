@@ -239,6 +239,39 @@ class DataCollectorWidget(QWidget):
         tick_group.setLayout(tick_layout)
         layout.addWidget(tick_group)
 
+        # Statistics panel
+        stats_group = QGroupBox("실시간 수집 현황")
+        stats_layout = QHBoxLayout()
+
+        self.current_stock_label = QLabel("대기 중...")
+        self.current_stock_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        stats_layout.addWidget(QLabel("현재 종목:"))
+        stats_layout.addWidget(self.current_stock_label)
+        stats_layout.addStretch()
+
+        self.success_count_label = QLabel("0")
+        self.success_count_label.setStyleSheet("font-weight: bold; color: green;")
+        stats_layout.addWidget(QLabel("성공:"))
+        stats_layout.addWidget(self.success_count_label)
+
+        self.failed_count_label = QLabel("0")
+        self.failed_count_label.setStyleSheet("font-weight: bold; color: red;")
+        stats_layout.addWidget(QLabel("실패:"))
+        stats_layout.addWidget(self.failed_count_label)
+
+        self.total_count_label = QLabel("0")
+        self.total_count_label.setStyleSheet("font-weight: bold;")
+        stats_layout.addWidget(QLabel("전체:"))
+        stats_layout.addWidget(self.total_count_label)
+
+        self.speed_label = QLabel("0.0/초")
+        self.speed_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        stats_layout.addWidget(QLabel("처리 속도:"))
+        stats_layout.addWidget(self.speed_label)
+
+        stats_group.setLayout(stats_layout)
+        layout.addWidget(stats_group)
+
         # Log output
         log_group = QGroupBox("수집 로그")
         log_layout = QVBoxLayout()
@@ -296,6 +329,9 @@ class DataCollectorWidget(QWidget):
 
         if reply == QMessageBox.No:
             return
+
+        # Reset statistics
+        self.reset_stats()
 
         self.add_log(f"일봉 데이터 수집 시작 ({years}년)...")
         self.set_buttons_enabled(False)
@@ -384,10 +420,128 @@ class DataCollectorWidget(QWidget):
         self.set_buttons_enabled(True)
 
     def add_log(self, message: str):
-        """Add log message"""
+        """Add log message and update statistics"""
         from datetime import datetime
         timestamp = datetime.now().strftime('%H:%M:%S')
         self.log_output.append(f"[{timestamp}] {message}")
+
+        # Parse log message for real-time statistics
+        self._update_stats_from_log(message)
+
+    def _update_stats_from_log(self, message: str):
+        """Update statistics from log message"""
+        import re
+
+        # Extract current stock being processed
+        if "수집 중:" in message:
+            # Example: "수집 중: 005930 (1/100)"
+            try:
+                parts = message.split("수집 중:")[1].strip()
+                stock_code = parts.split()[0]
+                self.current_stock_label.setText(stock_code)
+            except:
+                pass
+
+        elif "✓" in message or "✗" in message:
+            # Example: "✓ 005930: 600개 틱 저장됨" or "✗ 005930: 데이터 없음"
+            try:
+                stock_code = message.split()[1].replace(":", "")
+                self.current_stock_label.setText(stock_code)
+            except:
+                pass
+
+        # Extract success/failure counts from final summary
+        if "성공:" in message and "실패:" in message:
+            # Example: "수집 완료 - 성공: 150, 실패: 2, 소요 시간: 2분 32초"
+            try:
+                success_match = re.search(r"성공:\s*(\d+)", message)
+                failed_match = re.search(r"실패:\s*(\d+)", message)
+
+                if success_match:
+                    self.success_count_label.setText(success_match.group(1))
+                if failed_match:
+                    self.failed_count_label.setText(failed_match.group(1))
+            except:
+                pass
+
+        elif "Success=" in message:
+            # Example: "수집 완료 - Success=1500, Failed=20, Total=1520"
+            try:
+                success_match = re.search(r"Success=(\d+)", message)
+                failed_match = re.search(r"Failed=(\d+)", message)
+                total_match = re.search(r"Total=(\d+)", message)
+
+                if success_match:
+                    self.success_count_label.setText(success_match.group(1))
+                if failed_match:
+                    self.failed_count_label.setText(failed_match.group(1))
+                if total_match:
+                    self.total_count_label.setText(total_match.group(1))
+            except:
+                pass
+
+        # Extract from dictionary format
+        elif "'success':" in message:
+            try:
+                success_match = re.search(r"'success':\s*(\d+)", message)
+                failed_match = re.search(r"'failed':\s*(\d+)", message)
+                total_match = re.search(r"'total':\s*(\d+)", message)
+
+                if success_match:
+                    self.success_count_label.setText(success_match.group(1))
+                if failed_match:
+                    self.failed_count_label.setText(failed_match.group(1))
+                if total_match:
+                    self.total_count_label.setText(total_match.group(1))
+            except:
+                pass
+
+        # Extract progress and speed information
+        if "Processed" in message:
+            # Example: "Processed 100/2500 stocks"
+            try:
+                parts = message.split("Processed")[1].strip().split()[0]
+                if "/" in parts:
+                    current, total = parts.split("/")
+                    # Update total if not already set
+                    if self.total_count_label.text() == "0":
+                        self.total_count_label.setText(total)
+            except:
+                pass
+
+        # Extract speed from status message
+        if "속도:" in message:
+            # Example: "진행: 100/2500 | 속도: 1.2/초 | 남은 시간: 33분 20초"
+            try:
+                speed_match = re.search(r"속도:\s*([\d.]+)/초", message)
+                if speed_match:
+                    self.speed_label.setText(f"{speed_match.group(1)}/초")
+            except:
+                pass
+
+        # Update success count from checkmark messages
+        if "✓" in message and "저장됨" in message:
+            try:
+                current_success = int(self.success_count_label.text())
+                self.success_count_label.setText(str(current_success + 1))
+            except:
+                pass
+
+        # Update failed count from X mark messages
+        elif "✗" in message and ("데이터 없음" in message or "오류:" in message):
+            try:
+                current_failed = int(self.failed_count_label.text())
+                self.failed_count_label.setText(str(current_failed + 1))
+            except:
+                pass
+
+    def reset_stats(self):
+        """Reset statistics display"""
+        self.current_stock_label.setText("대기 중...")
+        self.success_count_label.setText("0")
+        self.failed_count_label.setText("0")
+        self.total_count_label.setText("0")
+        self.speed_label.setText("0.0/초")
 
     def collect_minute_prices_selected(self):
         """Collect minute price data for selected stocks"""
@@ -485,6 +639,9 @@ class DataCollectorWidget(QWidget):
         if reply == QMessageBox.No:
             return
 
+        # Reset statistics
+        self.reset_stats()
+
         self.add_log(f"분봉 데이터 수집 시작 (간격: {intervals}, 개수: {count})...")
         self.set_buttons_enabled(False)
 
@@ -571,6 +728,10 @@ class DataCollectorWidget(QWidget):
 
         if reply == QMessageBox.No:
             return
+
+        # Reset statistics
+        self.reset_stats()
+        self.total_count_label.setText(str(len(stock_codes)))
 
         self.add_log(f"틱 데이터 수집 시작 ({len(stock_codes)}개 종목, {count}틱)...")
         self.set_buttons_enabled(False)

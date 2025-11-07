@@ -141,14 +141,28 @@ class DataCollectionWorker(QThread):
         count = self.kwargs.get('count', 500)
         stock_codes = self.kwargs.get('stock_codes')
 
-        self.log.emit(f"Starting optimized minute price collection (intervals: {intervals})...")
-        self.progress.emit(5, "Logging in and initializing pool...")
+        self.log.emit(f"분봉 데이터 수집 시작 (간격: {intervals}, 개수: {count})")
+        self.progress.emit(5, "API 로그인 및 커넥션 풀 초기화 중...")
 
         if not self.collector.login():
             self.error.emit("Login failed")
             return
 
-        self.progress.emit(10, "Starting parallel collection...")
+        self.log.emit("병렬 처리 시작 (5 워커, 배치 크기 30)")
+        self.progress.emit(10, "병렬 데이터 수집 시작...")
+
+        # Get total stock count for logging
+        if stock_codes:
+            total_stocks = len(stock_codes)
+        else:
+            from db.database import session_scope
+            from db.models import Stock
+            with session_scope() as session:
+                total_stocks = session.query(Stock).count()
+
+        total_tasks = total_stocks * len(intervals)
+        self.log.emit(f"총 수집 작업: {total_tasks:,}개 (종목: {total_stocks:,}개 × 간격: {len(intervals)}개)")
+
         stats = self.collector.collect_all_minute_prices_parallel(
             intervals=intervals,
             count=count,
@@ -156,50 +170,65 @@ class DataCollectionWorker(QThread):
             batch_size=30
         )
 
-        self.progress.emit(100, "Minute collection completed")
+        self.log.emit(f"수집 완료 - Success={stats.get('success', 0)}, Failed={stats.get('failed', 0)}, Total={stats.get('total', 0)}")
+        self.progress.emit(100, "분봉 수집 완료")
         self.finished.emit(stats)
         self.collector.logout()
 
     def _collect_tick_data(self):
         """Collect tick data"""
+        import time
         stock_codes = self.kwargs.get('stock_codes', [])
         count = self.kwargs.get('count', 600)
 
-        self.log.emit(f"Starting tick data collection ({len(stock_codes)} stocks)...")
-        self.progress.emit(10, "Logging in...")
+        self.log.emit(f"틱 데이터 수집 시작 (종목: {len(stock_codes)}개, 틱: {count}개)")
+        self.progress.emit(10, "API 로그인 중...")
 
         if not self.collector.login():
             self.error.emit("Login failed")
             return
 
-        self.progress.emit(30, "Collecting tick data...")
+        self.log.emit("순차 처리 시작 (1초당 1종목)")
+        self.progress.emit(30, "틱 데이터 수집 중...")
 
         # 각 종목별로 수집
         success_count = 0
         failed_count = 0
+        start_time = time.time()
 
         for i, code in enumerate(stock_codes):
             if not self._is_running:
+                self.log.emit(f"수집 중단됨 (처리: {i}/{len(stock_codes)})")
                 break
 
             try:
-                self.log.emit(f"Collecting tick data for {code}...")
+                self.log.emit(f"수집 중: {code} ({i+1}/{len(stock_codes)})")
                 records = self.collector.collect_tick_data(code, count=count)
 
                 if records > 0:
                     success_count += 1
+                    self.log.emit(f"✓ {code}: {records}개 틱 저장됨")
                 else:
                     failed_count += 1
+                    self.log.emit(f"✗ {code}: 데이터 없음")
 
-                # 진행률 업데이트
+                # 진행률 및 속도 계산
                 progress = int(30 + (60 * (i + 1) / len(stock_codes)))
-                self.progress.emit(progress, f"Processed {i+1}/{len(stock_codes)} stocks")
+                elapsed = time.time() - start_time
+                speed = (i + 1) / elapsed if elapsed > 0 else 0
+                remaining = (len(stock_codes) - (i + 1)) / speed if speed > 0 else 0
+
+                status_msg = f"진행: {i+1}/{len(stock_codes)} | 속도: {speed:.1f}/초 | 남은 시간: {int(remaining//60)}분 {int(remaining%60)}초"
+                self.progress.emit(progress, status_msg)
+                self.log.emit(f"Processed {i+1}/{len(stock_codes)} stocks")
 
             except Exception as e:
-                self.log.emit(f"Error collecting {code}: {e}")
                 failed_count += 1
+                self.log.emit(f"✗ {code} 오류: {str(e)}")
 
-        self.progress.emit(100, f"Tick collection completed")
+        total_time = time.time() - start_time
+        self.log.emit(f"수집 완료 - 성공: {success_count}, 실패: {failed_count}, 소요 시간: {int(total_time//60)}분 {int(total_time%60)}초")
+        self.progress.emit(100, f"틱 수집 완료")
         self.finished.emit({
             'success': success_count,
             'failed': failed_count,
