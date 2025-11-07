@@ -1,12 +1,25 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir \"C:\\Users\\andms\\AppData\\Local\\Programs\\Python\" /b)",
-      "Bash(C:/Users/andms/AppData/Local/Programs/Python/Python311-32/python.exe:*)",
-      "Bash(cmd /c \"rmdir /s /q venv\")",
-      "Bash(cmd /c \"rmdir /s /q venv && C:\\Users\\andms\\AppData\\Local\\Programs\\Python\\Python311-32\\python.exe -m venv venv\")",
-      "Bash(git config:*)",
-      "Bash(git add:*)"
+      "Bash(cmd /c \"rmdir /s /q venv && C:\\Users\\AND\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m venv venv\")",
+      "Bash(C:/Users/AND/AppData/Local/Programs/Python/Python312/python.exe:*)",
+      "Bash(C:/Python312-32/python.exe -m pip install PyQt5)",
+      "Bash(findstr:*)",
+      "Bash(cmd /c \"dir logs /b /o-d 2>nul\")",
+      "Bash(tasklist:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cmd /c \"dir logs /b /o-d 2>nul | findstr kiwoom\")",
+      "Bash(netstat:*)",
+      "Bash(find:*)",
+      "Bash(taskkill /F /PID 13172 /PID 28340)",
+      "Bash(cmd /c \"taskkill /F /PID 13172\")",
+      "Bash(taskkill:*)",
+      "Bash(del kill_processes.py)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(dir:*)",
+      "Bash(cmd /c \"dir logs /b /o-d\")"
     ],
     "deny": [],
     "ask": []

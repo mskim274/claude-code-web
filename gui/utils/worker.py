@@ -84,20 +84,75 @@ class DataCollectionWorker(QThread):
 
     def _collect_daily_prices(self):
         """Collect daily prices for all stocks"""
+        import time
         years = self.kwargs.get('years', 5)
 
-        self.log.emit(f"Starting daily price collection ({years} years)...")
-        self.progress.emit(5, "Logging in to Kiwoom API...")
+        self.log.emit(f"일봉 데이터 수집 시작 ({years}년치)")
+        self.progress.emit(5, "API 로그인 중...")
 
         if not self.collector.login():
             self.error.emit("Login failed")
             return
 
-        self.progress.emit(10, "Starting data collection...")
-        stats = self.collector.collect_all_daily_prices(years=years)
+        # Get stock list
+        from db.database import session_scope
+        from db.models import Stock
+        with session_scope() as session:
+            stocks = session.query(Stock).all()
+            stock_list = [(s.code, s.name) for s in stocks]
 
-        self.progress.emit(100, "Collection completed")
-        self.finished.emit(stats)
+        total_stocks = len(stock_list)
+        self.log.emit(f"총 {total_stocks:,}개 종목 수집 예정")
+        self.progress.emit(10, "일봉 데이터 수집 시작...")
+
+        # Collect each stock
+        success_count = 0
+        skipped_count = 0
+        failed_count = 0
+        start_time = time.time()
+
+        for i, (code, name) in enumerate(stock_list):
+            if not self._is_running:
+                self.log.emit(f"수집 중단됨 (처리: {i}/{total_stocks})")
+                break
+
+            try:
+                self.log.emit(f"수집 중: {code} - {name} ({i+1}/{total_stocks})")
+                records = self.collector.collect_daily_price(code, years=years)
+
+                if records > 0:
+                    success_count += 1
+                    self.log.emit(f"✓ {code}: {records}개 레코드 저장됨")
+                elif records == 0:
+                    skipped_count += 1
+                    self.log.emit(f"○ {code}: 이미 최신 데이터 존재")
+                else:
+                    failed_count += 1
+                    self.log.emit(f"✗ {code}: 데이터 수집 실패")
+
+                # Calculate progress and speed
+                progress = int(10 + (85 * (i + 1) / total_stocks))
+                elapsed = time.time() - start_time
+                speed = (i + 1) / elapsed if elapsed > 0 else 0
+                remaining = (total_stocks - (i + 1)) / speed if speed > 0 else 0
+
+                status_msg = f"진행: {i+1}/{total_stocks} | 속도: {speed:.1f}/초 | 남은 시간: {int(remaining//60)}분 {int(remaining%60)}초"
+                self.progress.emit(progress, status_msg)
+
+            except Exception as e:
+                failed_count += 1
+                self.log.emit(f"✗ {code} 오류: {str(e)}")
+
+        total_time = time.time() - start_time
+        self.log.emit(f"수집 완료 - 성공: {success_count}, 건너뜀: {skipped_count}, 실패: {failed_count}, 소요 시간: {int(total_time//60)}분 {int(total_time%60)}초")
+        self.progress.emit(100, "일봉 수집 완료")
+        self.finished.emit({
+            'success': success_count,
+            'skipped': skipped_count,
+            'failed': failed_count,
+            'total': total_stocks,
+            'total_records': success_count + skipped_count
+        })
         self.collector.logout()
 
     def _collect_single_stock(self):

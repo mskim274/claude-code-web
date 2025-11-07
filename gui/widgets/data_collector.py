@@ -254,6 +254,11 @@ class DataCollectorWidget(QWidget):
         stats_layout.addWidget(QLabel("성공:"))
         stats_layout.addWidget(self.success_count_label)
 
+        self.skipped_count_label = QLabel("0")
+        self.skipped_count_label.setStyleSheet("font-weight: bold; color: #9E9E9E;")
+        stats_layout.addWidget(QLabel("건너뜀:"))
+        stats_layout.addWidget(self.skipped_count_label)
+
         self.failed_count_label = QLabel("0")
         self.failed_count_label.setStyleSheet("font-weight: bold; color: red;")
         stats_layout.addWidget(QLabel("실패:"))
@@ -520,15 +525,23 @@ class DataCollectorWidget(QWidget):
                 pass
 
         # Update success count from checkmark messages
-        if "✓" in message and "저장됨" in message:
+        if "✓" in message and ("저장됨" in message or "레코드" in message):
             try:
                 current_success = int(self.success_count_label.text())
                 self.success_count_label.setText(str(current_success + 1))
             except:
                 pass
 
+        # Update skipped count from circle mark messages
+        elif "○" in message and "이미 최신 데이터" in message:
+            try:
+                current_skipped = int(self.skipped_count_label.text())
+                self.skipped_count_label.setText(str(current_skipped + 1))
+            except:
+                pass
+
         # Update failed count from X mark messages
-        elif "✗" in message and ("데이터 없음" in message or "오류:" in message):
+        elif "✗" in message and ("데이터 없음" in message or "오류:" in message or "실패" in message):
             try:
                 current_failed = int(self.failed_count_label.text())
                 self.failed_count_label.setText(str(current_failed + 1))
@@ -539,6 +552,7 @@ class DataCollectorWidget(QWidget):
         """Reset statistics display"""
         self.current_stock_label.setText("대기 중...")
         self.success_count_label.setText("0")
+        self.skipped_count_label.setText("0")
         self.failed_count_label.setText("0")
         self.total_count_label.setText("0")
         self.speed_label.setText("0.0/초")
