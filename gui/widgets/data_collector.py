@@ -402,12 +402,46 @@ class DataCollectorWidget(QWidget):
 
     def collect_minute_prices_all(self):
         """Collect minute price data for all stocks"""
+        from db.database import session_scope
+        from db.models import Stock
+
+        # 전체 종목 수 확인
+        with session_scope() as session:
+            total_stocks = session.query(Stock).count()
+
+        # 선택된 간격 수 확인
+        interval_count = sum([
+            self.interval_1min.isChecked(),
+            self.interval_5min.isChecked(),
+            self.interval_10min.isChecked(),
+            self.interval_30min.isChecked(),
+            self.interval_60min.isChecked()
+        ])
+
+        if interval_count == 0:
+            interval_count = 1  # 최소 1개
+
+        # 예상 시간 계산 (병렬 처리 5 워커, 배치 30)
+        # 순차: total_stocks * interval_count 초
+        # 병렬: (total_stocks * interval_count) / 5 초 (약 70% 개선)
+        total_tasks = total_stocks * interval_count
+        estimated_seconds = total_tasks // 5  # 병렬 처리
+        estimated_minutes = estimated_seconds // 60
+        estimated_hours = estimated_minutes // 60
+        remaining_minutes = estimated_minutes % 60
+
+        if estimated_hours > 0:
+            time_str = f'약 {estimated_hours}시간 {remaining_minutes}분'
+        else:
+            time_str = f'약 {estimated_minutes}분'
+
         reply = QMessageBox.warning(
             self, '경고',
-            '전체 종목의 분봉 데이터를 수집합니다.\n\n'
-            '⚠️ 이 작업은 수 시간이 소요될 수 있습니다!\n'
-            '⚠️ API 호출 제한으로 인해 오래 걸립니다.\n\n'
-            '정말 계속하시겠습니까?',
+            f'전체 {total_stocks}개 종목의 분봉 데이터를 수집합니다.\n\n'
+            f'⚠️ 예상 소요 시간: {time_str} (병렬 처리)\n'
+            f'⚠️ 선택된 간격: {interval_count}개\n'
+            f'⚠️ 총 수집 작업: {total_tasks:,}개\n\n'
+            f'정말 계속하시겠습니까?',
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -490,11 +524,22 @@ class DataCollectorWidget(QWidget):
         with session_scope() as session:
             total_stocks = session.query(Stock).count()
 
+        # 예상 시간 계산 (1초당 1종목)
+        estimated_seconds = total_stocks
+        estimated_minutes = estimated_seconds // 60
+        estimated_hours = estimated_minutes // 60
+        remaining_minutes = estimated_minutes % 60
+
+        if estimated_hours > 0:
+            time_str = f'약 {estimated_hours}시간 {remaining_minutes}분'
+        else:
+            time_str = f'약 {estimated_minutes}분'
+
         reply = QMessageBox.warning(
             self, '경고',
             f'전체 {total_stocks}개 종목의 틱 데이터를 수집합니다.\n\n'
-            f'⚠️ 예상 소요 시간: 약 {total_stocks // 60}시간\n'
-            f'⚠️ API 호출 제한으로 인해 매우 오래 걸립니다!\n'
+            f'⚠️ 예상 소요 시간: {time_str}\n'
+            f'⚠️ API 호출 제한: 1초당 1종목 (순차 처리)\n'
             f'⚠️ 틱 데이터는 최근 600틱만 저장됩니다.\n\n'
             f'정말 계속하시겠습니까?',
             QMessageBox.Yes | QMessageBox.No,
