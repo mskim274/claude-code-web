@@ -175,9 +175,18 @@ class DataCollectorWidget(QWidget):
         warning2.setStyleSheet("color: orange; font-weight: bold;")
         minute_layout.addWidget(warning2)
 
-        self.collect_minute_btn = QPushButton("분봉 데이터 수집 (최적화)")
-        self.collect_minute_btn.clicked.connect(self.collect_minute_prices)
-        minute_layout.addWidget(self.collect_minute_btn)
+        # 버튼 레이아웃
+        minute_btn_layout = QHBoxLayout()
+        self.collect_minute_selected_btn = QPushButton("선택 종목 수집")
+        self.collect_minute_selected_btn.clicked.connect(self.collect_minute_prices_selected)
+        minute_btn_layout.addWidget(self.collect_minute_selected_btn)
+
+        self.collect_minute_all_btn = QPushButton("전체 종목 수집")
+        self.collect_minute_all_btn.clicked.connect(self.collect_minute_prices_all)
+        self.collect_minute_all_btn.setStyleSheet("background-color: #ff6b6b; color: white; font-weight: bold;")
+        minute_btn_layout.addWidget(self.collect_minute_all_btn)
+
+        minute_layout.addLayout(minute_btn_layout)
 
         minute_group.setLayout(minute_layout)
         layout.addWidget(minute_group)
@@ -214,9 +223,18 @@ class DataCollectorWidget(QWidget):
         tick_note.setStyleSheet("color: gray; font-size: 11px;")
         tick_layout.addWidget(tick_note)
 
-        self.collect_tick_btn = QPushButton("틱 데이터 수집")
-        self.collect_tick_btn.clicked.connect(self.collect_tick_data)
-        tick_layout.addWidget(self.collect_tick_btn)
+        # 버튼 레이아웃
+        tick_btn_layout = QHBoxLayout()
+        self.collect_tick_selected_btn = QPushButton("선택 종목 수집")
+        self.collect_tick_selected_btn.clicked.connect(self.collect_tick_data_selected)
+        tick_btn_layout.addWidget(self.collect_tick_selected_btn)
+
+        self.collect_tick_all_btn = QPushButton("전체 종목 수집")
+        self.collect_tick_all_btn.clicked.connect(self.collect_tick_data_all)
+        self.collect_tick_all_btn.setStyleSheet("background-color: #ff6b6b; color: white; font-weight: bold;")
+        tick_btn_layout.addWidget(self.collect_tick_all_btn)
+
+        tick_layout.addLayout(tick_btn_layout)
 
         tick_group.setLayout(tick_layout)
         layout.addWidget(tick_group)
@@ -371,8 +389,36 @@ class DataCollectorWidget(QWidget):
         timestamp = datetime.now().strftime('%H:%M:%S')
         self.log_output.append(f"[{timestamp}] {message}")
 
-    def collect_minute_prices(self):
-        """Collect minute price data"""
+    def collect_minute_prices_selected(self):
+        """Collect minute price data for selected stocks"""
+        # 종목 코드 확인
+        stock_codes_text = self.minute_stock_code_input.text().strip()
+        if not stock_codes_text:
+            QMessageBox.warning(self, "입력 오류", "종목코드를 입력해주세요")
+            return
+
+        stock_codes = [code.strip() for code in stock_codes_text.split(',')]
+        self._collect_minute_prices_internal(stock_codes)
+
+    def collect_minute_prices_all(self):
+        """Collect minute price data for all stocks"""
+        reply = QMessageBox.warning(
+            self, '경고',
+            '전체 종목의 분봉 데이터를 수집합니다.\n\n'
+            '⚠️ 이 작업은 수 시간이 소요될 수 있습니다!\n'
+            '⚠️ API 호출 제한으로 인해 오래 걸립니다.\n\n'
+            '정말 계속하시겠습니까?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        self._collect_minute_prices_internal(None)
+
+    def _collect_minute_prices_internal(self, stock_codes):
+        """Internal method to collect minute prices"""
         # 선택된 분봉 간격
         intervals = []
         if self.interval_1min.isChecked():
@@ -389,12 +435,6 @@ class DataCollectorWidget(QWidget):
         if not intervals:
             QMessageBox.warning(self, "입력 오류", "최소 하나의 분봉 간격을 선택해주세요")
             return
-
-        # 종목 코드
-        stock_codes_text = self.minute_stock_code_input.text().strip()
-        stock_codes = None
-        if stock_codes_text:
-            stock_codes = [code.strip() for code in stock_codes_text.split(',')]
 
         count = self.minute_count_spin.value()
 
@@ -431,14 +471,48 @@ class DataCollectorWidget(QWidget):
         self.worker.start()
         progress.exec_()
 
-    def collect_tick_data(self):
-        """Collect tick data"""
+    def collect_tick_data_selected(self):
+        """Collect tick data for selected stocks"""
         stock_codes_text = self.tick_stock_code_input.text().strip()
         if not stock_codes_text:
             QMessageBox.warning(self, "입력 오류", "종목코드를 입력해주세요")
             return
 
         stock_codes = [code.strip() for code in stock_codes_text.split(',')]
+        self._collect_tick_data_internal(stock_codes)
+
+    def collect_tick_data_all(self):
+        """Collect tick data for all stocks"""
+        from db.database import session_scope
+        from db.models import Stock
+
+        # 전체 종목 수 확인
+        with session_scope() as session:
+            total_stocks = session.query(Stock).count()
+
+        reply = QMessageBox.warning(
+            self, '경고',
+            f'전체 {total_stocks}개 종목의 틱 데이터를 수집합니다.\n\n'
+            f'⚠️ 예상 소요 시간: 약 {total_stocks // 60}시간\n'
+            f'⚠️ API 호출 제한으로 인해 매우 오래 걸립니다!\n'
+            f'⚠️ 틱 데이터는 최근 600틱만 저장됩니다.\n\n'
+            f'정말 계속하시겠습니까?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        # 전체 종목 코드 조회
+        with session_scope() as session:
+            stocks = session.query(Stock).all()
+            stock_codes = [s.code for s in stocks]
+
+        self._collect_tick_data_internal(stock_codes)
+
+    def _collect_tick_data_internal(self, stock_codes):
+        """Internal method to collect tick data"""
         count = self.tick_count_spin.value()
 
         reply = QMessageBox.question(
@@ -479,5 +553,7 @@ class DataCollectorWidget(QWidget):
         self.collect_all_btn.setEnabled(enabled)
         self.collect_single_btn.setEnabled(enabled)
         self.update_btn.setEnabled(enabled)
-        self.collect_minute_btn.setEnabled(enabled)
-        self.collect_tick_btn.setEnabled(enabled)
+        self.collect_minute_selected_btn.setEnabled(enabled)
+        self.collect_minute_all_btn.setEnabled(enabled)
+        self.collect_tick_selected_btn.setEnabled(enabled)
+        self.collect_tick_all_btn.setEnabled(enabled)
