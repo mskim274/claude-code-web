@@ -3,12 +3,13 @@
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 
-from collectors.kiwoom_api import KiwoomAPI
+from collectors.kiwoom_api_client import KiwoomAPIClient
 from db.database import session_scope
-from db.models import Stock, DailyPrice, MinutePrice, StockInfo, CollectionLog
+from db.models import Stock, DailyPrice, MinutePrice, TickPrice, StockInfo, CollectionLog
 from config.kiwoom_config import KiwoomConfig
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ class StockCollector:
 
     def __init__(self):
         """수집기 초기화"""
-        self.api = KiwoomAPI()
+        self.api = KiwoomAPIClient()
         self.is_logged_in = False
         logger.info("StockCollector initialized")
 
@@ -120,9 +121,18 @@ class StockCollector:
             return 0
 
         try:
+            # 최근 상장 종목은 짧은 기간만 요청 (타임아웃 방지)
+            # ETF, ETN 등은 대부분 최근 상장
+            if stock_code.endswith(('0', 'C0', 'D0', 'H0', 'J0', 'P0', 'S0', 'Y0', 'Z0')):
+                # ETF로 추정되는 종목은 3년치만 요청
+                actual_years = min(years, 3)
+                logger.info(f"ETF detected ({stock_code}), limiting to {actual_years} years")
+            else:
+                actual_years = years
+
             # 시작일/종료일 계산
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=years * 365)
+            start_date = end_date - timedelta(days=actual_years * 365)
 
             logger.info(f"Collecting daily price for {stock_code} from {start_date.date()} to {end_date.date()}")
 
@@ -251,7 +261,7 @@ class StockCollector:
 
         for idx, (code, name) in enumerate(stock_codes, 1):
             retry_count = 0
-            max_retries = 1
+            max_retries = 2  # 재시도 횟수 증가
 
             while retry_count <= max_retries:
                 try:
@@ -281,7 +291,9 @@ class StockCollector:
                     logger.warning(f"{error_type} processing {code}: {e}")
 
                     if retry_count < max_retries:
-                        logger.info(f"Reconnected, retrying {code}...")
+                        logger.info(f"Waiting 3 seconds before retry...")
+                        time.sleep(3)  # 재시도 전 대기
+                        logger.info(f"Retrying {code}...")
                         retry_count += 1
                     else:
                         logger.error(f"Failed after {max_retries + 1} attempts for {code}")
@@ -415,3 +427,393 @@ class StockCollector:
 
         logger.info(f"Updated {updated} stocks with latest prices")
         return updated
+
+    def collect_minute_price(self, stock_code, interval=1, count=900):
+        """
+        특정 종목의 분봉 데이터 수집
+
+        Args:
+            stock_code: 종목 코드
+            interval: 분봉 간격 (1, 5, 10, 30, 60)
+            count: 수집 개수 (기본 900개)
+
+        Returns:
+            int: 수집된 레코드 수
+        """
+        if not self.is_logged_in:
+            logger.error("Not logged in")
+            return 0
+
+        try:
+            logger.info(f"Collecting {interval}min price for {stock_code} (count: {count})")
+
+            # 수집 로그 생성
+            with session_scope() as session:
+                log = CollectionLog(
+                    stock_code=stock_code,
+                    collection_type=f'minute_{interval}',
+                    status='in_progress'
+                )
+                session.add(log)
+                session.flush()
+                log_id = log.id
+
+            # API로 데이터 조회
+            data_list = self.api.get_minute_price(stock_code, tick=interval, count=count)
+
+            if not data_list:
+                logger.warning(f"No minute data for {stock_code}")
+                with session_scope() as session:
+                    log = session.query(CollectionLog).get(log_id)
+                    log.status = 'failed'
+                    log.error_message = 'No data returned'
+                    log.completed_at = datetime.now()
+                return 0
+
+            # DB에 저장
+            saved_count = 0
+            with session_scope() as session:
+                for data in data_list:
+                    try:
+                        # 시간 파싱 (YYYYMMDDHHmmss)
+                        time_str = data['체결시간'].strip()
+                        dt = datetime.strptime(time_str, '%Y%m%d%H%M%S')
+
+                        # 이미 존재하는지 확인
+                        existing = session.query(MinutePrice).filter_by(
+                            stock_code=stock_code,
+                            datetime=dt,
+                            interval=interval
+                        ).first()
+
+                        if existing:
+                            continue
+
+                        # 가격 데이터 파싱 (부호 제거)
+                        close = abs(int(data['현재가'].strip()))
+                        open_price = abs(int(data['시가'].strip()))
+                        high = abs(int(data['고가'].strip()))
+                        low = abs(int(data['저가'].strip()))
+                        volume = int(data['거래량'].strip())
+
+                        # MinutePrice 객체 생성
+                        minute_price = MinutePrice(
+                            stock_code=stock_code,
+                            datetime=dt,
+                            interval=interval,
+                            open=open_price,
+                            high=high,
+                            low=low,
+                            close=close,
+                            volume=volume
+                        )
+                        session.add(minute_price)
+                        saved_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Error parsing minute data for {stock_code} at {data.get('체결시간')}: {e}")
+                        continue
+
+                # 수집 로그 업데이트
+                log = session.query(CollectionLog).get(log_id)
+                log.status = 'success'
+                log.records_collected = saved_count
+                log.completed_at = datetime.now()
+
+            logger.info(f"Saved {saved_count} {interval}min price records for {stock_code}")
+            return saved_count
+
+        except Exception as e:
+            logger.error(f"Error collecting minute price for {stock_code}: {e}")
+            with session_scope() as session:
+                if 'log_id' in locals():
+                    log = session.query(CollectionLog).get(log_id)
+                    log.status = 'failed'
+                    log.error_message = str(e)
+                    log.completed_at = datetime.now()
+            return 0
+
+    def collect_all_minute_prices(self, intervals=[1, 5, 10, 30, 60], count=900, stock_codes=None):
+        """
+        전체 종목의 분봉 데이터 수집
+
+        Args:
+            intervals: 수집할 분봉 간격 리스트 [1, 5, 10, 30, 60]
+            count: 각 분봉당 수집 개수
+            stock_codes: 수집할 종목 코드 리스트 (None이면 전체)
+
+        Returns:
+            dict: 수집 통계
+        """
+        if not self.is_logged_in:
+            logger.error("Not logged in")
+            return {'success': 0, 'skipped': 0, 'failed': 0, 'total': 0}
+
+        # 종목 리스트 조회
+        if stock_codes:
+            with session_scope() as session:
+                stocks = session.query(Stock).filter(Stock.code.in_(stock_codes)).all()
+                stock_list = [(s.code, s.name) for s in stocks]
+        else:
+            with session_scope() as session:
+                stocks = session.query(Stock).all()
+                stock_list = [(s.code, s.name) for s in stocks]
+
+        total = len(stock_list) * len(intervals)
+        success_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        logger.info(f"Starting minute price collection for {len(stock_list)} stocks, {len(intervals)} intervals")
+
+        for idx, (code, name) in enumerate(stock_list, 1):
+            for interval in intervals:
+                retry_count = 0
+                max_retries = 2
+
+                while retry_count <= max_retries:
+                    try:
+                        if retry_count == 0:
+                            logger.info(f"[{idx}/{len(stock_list)}] Processing {name} ({code}) - {interval}min")
+                        else:
+                            logger.info(f"[{idx}/{len(stock_list)}] Retrying {name} ({code}) - {interval}min - attempt {retry_count + 1}")
+
+                        records = self.collect_minute_price(code, interval, count)
+
+                        if records > 0:
+                            success_count += 1
+                        elif records == 0:
+                            skipped_count += 1
+                        else:
+                            failed_count += 1
+
+                        # 진행률 로그
+                        current = (idx - 1) * len(intervals) + intervals.index(interval) + 1
+                        if current % 10 == 0:
+                            progress = (current / total) * 100
+                            logger.info(f"Progress: {progress:.1f}% ({current}/{total}), Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
+
+                        break  # 성공하면 루프 탈출
+
+                    except (ConnectionError, TimeoutError) as e:
+                        error_type = type(e).__name__
+                        logger.warning(f"{error_type} processing {code} {interval}min: {e}")
+
+                        if retry_count < max_retries:
+                            logger.info(f"Waiting 3 seconds before retry...")
+                            time.sleep(3)
+                            retry_count += 1
+                        else:
+                            logger.error(f"Failed after {max_retries + 1} attempts for {code} {interval}min")
+                            failed_count += 1
+                            break
+
+                    except Exception as e:
+                        logger.error(f"Error processing {code} {interval}min: {e}")
+                        failed_count += 1
+                        break
+
+        logger.info(f"Minute price collection completed: Success={success_count}, Skipped={skipped_count}, Failed={failed_count}, Total={total}")
+        return {
+            'success': success_count,
+            'skipped': skipped_count,
+            'failed': failed_count,
+            'total': total
+        }
+
+    def collect_tick_data(self, stock_code, count=600):
+        """
+        특정 종목의 틱 데이터 수집
+
+        Args:
+            stock_code: 종목 코드
+            count: 수집 개수 (최대 600)
+
+        Returns:
+            int: 수집된 레코드 수
+        """
+        if not self.is_logged_in:
+            logger.error("Not logged in")
+            return 0
+
+        try:
+            logger.info(f"Collecting tick data for {stock_code} (count: {count})")
+
+            # 수집 로그 생성
+            with session_scope() as session:
+                log = CollectionLog(
+                    stock_code=stock_code,
+                    collection_type='tick',
+                    status='in_progress'
+                )
+                session.add(log)
+                session.flush()
+                log_id = log.id
+
+            # API로 데이터 조회
+            data_list = self.api.get_tick_data(stock_code, count=count)
+
+            if not data_list:
+                logger.warning(f"No tick data for {stock_code}")
+                with session_scope() as session:
+                    log = session.query(CollectionLog).get(log_id)
+                    log.status = 'failed'
+                    log.error_message = 'No data returned'
+                    log.completed_at = datetime.now()
+                return 0
+
+            # DB에 저장
+            saved_count = 0
+            with session_scope() as session:
+                for data in data_list:
+                    try:
+                        # 시간 파싱 (HHMMss 형식)
+                        time_str = data['체결시간'].strip()
+
+                        # 오늘 날짜 + 시간으로 datetime 생성
+                        today = datetime.now().date()
+                        if len(time_str) == 6:  # HHMMSS
+                            hour = int(time_str[0:2])
+                            minute = int(time_str[2:4])
+                            second = int(time_str[4:6])
+                            dt = datetime.combine(today, datetime.min.time().replace(hour=hour, minute=minute, second=second))
+                        else:
+                            logger.warning(f"Invalid time format: {time_str}")
+                            continue
+
+                        # 이미 존재하는지 확인
+                        existing = session.query(TickPrice).filter_by(
+                            stock_code=stock_code,
+                            datetime=dt
+                        ).first()
+
+                        if existing:
+                            continue
+
+                        # 가격 데이터 파싱 (부호 제거)
+                        price = abs(int(data['현재가'].strip()))
+                        volume = int(data['거래량'].strip())
+
+                        # 선택적 필드
+                        change = None
+                        if data.get('전일대비'):
+                            change = abs(int(data['전일대비'].strip()))
+
+                        # TickPrice 객체 생성
+                        tick_price = TickPrice(
+                            stock_code=stock_code,
+                            datetime=dt,
+                            price=price,
+                            volume=volume,
+                            change=change
+                        )
+                        session.add(tick_price)
+                        saved_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Error parsing tick data for {stock_code} at {data.get('체결시간')}: {e}")
+                        continue
+
+                # 수집 로그 업데이트
+                log = session.query(CollectionLog).get(log_id)
+                log.status = 'success'
+                log.records_collected = saved_count
+                log.completed_at = datetime.now()
+
+            logger.info(f"Saved {saved_count} tick records for {stock_code}")
+            return saved_count
+
+        except Exception as e:
+            logger.error(f"Error collecting tick data for {stock_code}: {e}")
+            with session_scope() as session:
+                if 'log_id' in locals():
+                    log = session.query(CollectionLog).get(log_id)
+                    log.status = 'failed'
+                    log.error_message = str(e)
+                    log.completed_at = datetime.now()
+            return 0
+
+    def collect_all_tick_data(self, count=600, stock_codes=None):
+        """
+        전체 종목의 틱 데이터 수집
+
+        Args:
+            count: 각 종목당 틱 개수 (최대 600)
+            stock_codes: 수집할 종목 코드 리스트 (None이면 전체)
+
+        Returns:
+            dict: 수집 통계
+        """
+        if not self.is_logged_in:
+            logger.error("Not logged in")
+            return {'success': 0, 'skipped': 0, 'failed': 0, 'total': 0}
+
+        # 종목 리스트 조회
+        if stock_codes:
+            with session_scope() as session:
+                stocks = session.query(Stock).filter(Stock.code.in_(stock_codes)).all()
+                stock_list = [(s.code, s.name) for s in stocks]
+        else:
+            with session_scope() as session:
+                stocks = session.query(Stock).all()
+                stock_list = [(s.code, s.name) for s in stocks]
+
+        total = len(stock_list)
+        success_count = 0
+        skipped_count = 0
+        failed_count = 0
+
+        logger.info(f"Starting tick data collection for {total} stocks")
+
+        for idx, (code, name) in enumerate(stock_list, 1):
+            retry_count = 0
+            max_retries = 2
+
+            while retry_count <= max_retries:
+                try:
+                    if retry_count == 0:
+                        logger.info(f"[{idx}/{total}] Processing {name} ({code}) - tick data")
+                    else:
+                        logger.info(f"[{idx}/{total}] Retrying {name} ({code}) - attempt {retry_count + 1}")
+
+                    records = self.collect_tick_data(code, count)
+
+                    if records > 0:
+                        success_count += 1
+                    elif records == 0:
+                        skipped_count += 1
+                    else:
+                        failed_count += 1
+
+                    # 진행률 로그
+                    if idx % 10 == 0:
+                        progress = (idx / total) * 100
+                        logger.info(f"Progress: {progress:.1f}% ({idx}/{total}), Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
+
+                    break  # 성공하면 루프 탈출
+
+                except (ConnectionError, TimeoutError) as e:
+                    error_type = type(e).__name__
+                    logger.warning(f"{error_type} processing {code}: {e}")
+
+                    if retry_count < max_retries:
+                        logger.info(f"Waiting 3 seconds before retry...")
+                        time.sleep(3)
+                        retry_count += 1
+                    else:
+                        logger.error(f"Failed after {max_retries + 1} attempts for {code}")
+                        failed_count += 1
+                        break
+
+                except Exception as e:
+                    logger.error(f"Error processing {code}: {e}")
+                    failed_count += 1
+                    break
+
+        logger.info(f"Tick data collection completed: Success={success_count}, Skipped={skipped_count}, Failed={failed_count}, Total={total}")
+        return {
+            'success': success_count,
+            'skipped': skipped_count,
+            'failed': failed_count,
+            'total': total
+        }

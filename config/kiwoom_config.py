@@ -68,9 +68,17 @@ class KiwoomConfig:
         'stock_list': 'OPT10001',  # 주식기본정보요청
         'daily_price': 'OPT10081',  # 주식일봉차트조회요청
         'minute_price': 'OPT10080',  # 주식분봉차트조회요청
+        'tick_data': 'OPT10079',  # 주식틱차트조회요청
         'investor_trading': 'OPT10059',  # 투자자별매매동향요청
         'stock_info': 'OPT10001',  # 주식기본정보
     }
+
+    # 분봉 수집 설정
+    MINUTE_INTERVALS = [1, 5, 10, 30, 60]  # 수집할 분봉 간격 (분)
+    MINUTE_COUNT = 900  # 분봉 수집 개수 (기본값)
+
+    # 틱 데이터 설정
+    TICK_COUNT = 600  # 틱 데이터 수집 개수 (최대 600)
 
     @classmethod
     def ensure_directories(cls):

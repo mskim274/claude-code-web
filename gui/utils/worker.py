@@ -59,6 +59,10 @@ class DataCollectionWorker(QThread):
                 self._collect_single_stock()
             elif self.collection_type == 'update_latest':
                 self._update_latest()
+            elif self.collection_type == 'minute_prices_optimized':
+                self._collect_minute_prices_optimized()
+            elif self.collection_type == 'tick_data':
+                self._collect_tick_data()
         except Exception as e:
             self.error.emit(str(e))
 
@@ -129,6 +133,78 @@ class DataCollectionWorker(QThread):
 
         self.progress.emit(100, f"Updated {updated} stocks")
         self.finished.emit({'updated': updated})
+        self.collector.logout()
+
+    def _collect_minute_prices_optimized(self):
+        """Collect minute prices with optimization"""
+        intervals = self.kwargs.get('intervals', [60])
+        count = self.kwargs.get('count', 500)
+        stock_codes = self.kwargs.get('stock_codes')
+
+        self.log.emit(f"Starting optimized minute price collection (intervals: {intervals})...")
+        self.progress.emit(5, "Logging in and initializing pool...")
+
+        if not self.collector.login():
+            self.error.emit("Login failed")
+            return
+
+        self.progress.emit(10, "Starting parallel collection...")
+        stats = self.collector.collect_all_minute_prices_parallel(
+            intervals=intervals,
+            count=count,
+            stock_codes=stock_codes,
+            batch_size=30
+        )
+
+        self.progress.emit(100, "Minute collection completed")
+        self.finished.emit(stats)
+        self.collector.logout()
+
+    def _collect_tick_data(self):
+        """Collect tick data"""
+        stock_codes = self.kwargs.get('stock_codes', [])
+        count = self.kwargs.get('count', 600)
+
+        self.log.emit(f"Starting tick data collection ({len(stock_codes)} stocks)...")
+        self.progress.emit(10, "Logging in...")
+
+        if not self.collector.login():
+            self.error.emit("Login failed")
+            return
+
+        self.progress.emit(30, "Collecting tick data...")
+
+        # 각 종목별로 수집
+        success_count = 0
+        failed_count = 0
+
+        for i, code in enumerate(stock_codes):
+            if not self._is_running:
+                break
+
+            try:
+                self.log.emit(f"Collecting tick data for {code}...")
+                records = self.collector.collect_tick_data(code, count=count)
+
+                if records > 0:
+                    success_count += 1
+                else:
+                    failed_count += 1
+
+                # 진행률 업데이트
+                progress = int(30 + (60 * (i + 1) / len(stock_codes)))
+                self.progress.emit(progress, f"Processed {i+1}/{len(stock_codes)} stocks")
+
+            except Exception as e:
+                self.log.emit(f"Error collecting {code}: {e}")
+                failed_count += 1
+
+        self.progress.emit(100, f"Tick collection completed")
+        self.finished.emit({
+            'success': success_count,
+            'failed': failed_count,
+            'total': len(stock_codes)
+        })
         self.collector.logout()
 
     def stop(self):

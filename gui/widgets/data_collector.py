@@ -4,11 +4,13 @@ Data collector widget - collect stock data from Kiwoom API
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QGroupBox, QSpinBox, QLineEdit,
-                             QMessageBox, QTextEdit)
+                             QMessageBox, QTextEdit, QCheckBox, QScrollArea,
+                             QComboBox)
 from PyQt5.QtCore import Qt
 from gui.components.progress_dialog import ProgressDialog
 from gui.utils.worker import DataCollectionWorker
 from collectors.stock_collector import StockCollector
+from collectors.optimized_collector import OptimizedStockCollector
 
 
 class DataCollectorWidget(QWidget):
@@ -21,7 +23,15 @@ class DataCollectorWidget(QWidget):
 
     def init_ui(self):
         """Initialize UI"""
-        layout = QVBoxLayout(self)
+        # 스크롤 가능한 영역 생성
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        layout = QVBoxLayout(scroll_widget)
+        scroll.setWidget(scroll_widget)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(scroll)
 
         # Title
         title = QLabel("데이터 수집")
@@ -115,6 +125,101 @@ class DataCollectorWidget(QWidget):
 
         update_group.setLayout(update_layout)
         layout.addWidget(update_group)
+
+        # Minute price collection
+        minute_group = QGroupBox("5. 분봉 데이터 수집")
+        minute_layout = QVBoxLayout()
+
+        desc4 = QLabel("선택한 종목의 분봉 데이터를 수집합니다 (1/5/10/30/60분)")
+        desc4.setWordWrap(True)
+        minute_layout.addWidget(desc4)
+
+        # 분봉 간격 선택
+        interval_layout = QHBoxLayout()
+        interval_layout.addWidget(QLabel("분봉 간격:"))
+        self.interval_1min = QCheckBox("1분")
+        self.interval_5min = QCheckBox("5분")
+        self.interval_10min = QCheckBox("10분")
+        self.interval_30min = QCheckBox("30분")
+        self.interval_60min = QCheckBox("60분")
+        self.interval_60min.setChecked(True)  # 기본 선택
+        interval_layout.addWidget(self.interval_1min)
+        interval_layout.addWidget(self.interval_5min)
+        interval_layout.addWidget(self.interval_10min)
+        interval_layout.addWidget(self.interval_30min)
+        interval_layout.addWidget(self.interval_60min)
+        interval_layout.addStretch()
+        minute_layout.addLayout(interval_layout)
+
+        # 분봉 개수
+        minute_count_layout = QHBoxLayout()
+        minute_count_layout.addWidget(QLabel("수집 개수:"))
+        self.minute_count_spin = QSpinBox()
+        self.minute_count_spin.setMinimum(100)
+        self.minute_count_spin.setMaximum(900)
+        self.minute_count_spin.setValue(500)
+        self.minute_count_spin.setSuffix("개")
+        minute_count_layout.addWidget(self.minute_count_spin)
+        minute_count_layout.addStretch()
+        minute_layout.addLayout(minute_count_layout)
+
+        # 종목 입력
+        minute_code_layout = QHBoxLayout()
+        minute_code_layout.addWidget(QLabel("종목코드:"))
+        self.minute_stock_code_input = QLineEdit()
+        self.minute_stock_code_input.setPlaceholderText("예: 005930,000660,035420 (쉼표 구분)")
+        minute_code_layout.addWidget(self.minute_stock_code_input)
+        minute_layout.addLayout(minute_code_layout)
+
+        warning2 = QLabel("주의: 전체 종목 수집은 수 시간이 소요될 수 있습니다!")
+        warning2.setStyleSheet("color: orange; font-weight: bold;")
+        minute_layout.addWidget(warning2)
+
+        self.collect_minute_btn = QPushButton("분봉 데이터 수집 (최적화)")
+        self.collect_minute_btn.clicked.connect(self.collect_minute_prices)
+        minute_layout.addWidget(self.collect_minute_btn)
+
+        minute_group.setLayout(minute_layout)
+        layout.addWidget(minute_group)
+
+        # Tick data collection
+        tick_group = QGroupBox("6. 틱 데이터 수집")
+        tick_layout = QVBoxLayout()
+
+        desc5 = QLabel("틱 데이터 수집 (최대 600틱, 최근 체결 데이터)")
+        desc5.setWordWrap(True)
+        tick_layout.addWidget(desc5)
+
+        # 틱 개수
+        tick_count_layout = QHBoxLayout()
+        tick_count_layout.addWidget(QLabel("수집 개수:"))
+        self.tick_count_spin = QSpinBox()
+        self.tick_count_spin.setMinimum(100)
+        self.tick_count_spin.setMaximum(600)
+        self.tick_count_spin.setValue(600)
+        self.tick_count_spin.setSuffix("틱")
+        tick_count_layout.addWidget(self.tick_count_spin)
+        tick_count_layout.addStretch()
+        tick_layout.addLayout(tick_count_layout)
+
+        # 종목 입력
+        tick_code_layout = QHBoxLayout()
+        tick_code_layout.addWidget(QLabel("종목코드:"))
+        self.tick_stock_code_input = QLineEdit()
+        self.tick_stock_code_input.setPlaceholderText("예: 005930,000660,035420 (쉼표 구분)")
+        tick_code_layout.addWidget(self.tick_stock_code_input)
+        tick_layout.addLayout(tick_code_layout)
+
+        tick_note = QLabel("※ 틱 데이터는 최근 600틱만 조회 가능합니다")
+        tick_note.setStyleSheet("color: gray; font-size: 11px;")
+        tick_layout.addWidget(tick_note)
+
+        self.collect_tick_btn = QPushButton("틱 데이터 수집")
+        self.collect_tick_btn.clicked.connect(self.collect_tick_data)
+        tick_layout.addWidget(self.collect_tick_btn)
+
+        tick_group.setLayout(tick_layout)
+        layout.addWidget(tick_group)
 
         # Log output
         log_group = QGroupBox("수집 로그")
@@ -266,9 +371,113 @@ class DataCollectorWidget(QWidget):
         timestamp = datetime.now().strftime('%H:%M:%S')
         self.log_output.append(f"[{timestamp}] {message}")
 
+    def collect_minute_prices(self):
+        """Collect minute price data"""
+        # 선택된 분봉 간격
+        intervals = []
+        if self.interval_1min.isChecked():
+            intervals.append(1)
+        if self.interval_5min.isChecked():
+            intervals.append(5)
+        if self.interval_10min.isChecked():
+            intervals.append(10)
+        if self.interval_30min.isChecked():
+            intervals.append(30)
+        if self.interval_60min.isChecked():
+            intervals.append(60)
+
+        if not intervals:
+            QMessageBox.warning(self, "입력 오류", "최소 하나의 분봉 간격을 선택해주세요")
+            return
+
+        # 종목 코드
+        stock_codes_text = self.minute_stock_code_input.text().strip()
+        stock_codes = None
+        if stock_codes_text:
+            stock_codes = [code.strip() for code in stock_codes_text.split(',')]
+
+        count = self.minute_count_spin.value()
+
+        reply = QMessageBox.question(
+            self, '확인',
+            f'분봉 데이터를 수집합니다.\n'
+            f'간격: {intervals}\n'
+            f'개수: {count}개\n'
+            f'종목: {"전체" if not stock_codes else f"{len(stock_codes)}개"}\n'
+            f'계속하시겠습니까?',
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        self.add_log(f"분봉 데이터 수집 시작 (간격: {intervals}, 개수: {count})...")
+        self.set_buttons_enabled(False)
+
+        progress = ProgressDialog("분봉 데이터 수집 중", self)
+
+        collector = OptimizedStockCollector(max_workers=5)
+        self.worker = DataCollectionWorker(
+            collector, 'minute_prices_optimized',
+            intervals=intervals, count=count, stock_codes=stock_codes
+        )
+        self.worker.progress.connect(progress.set_progress)
+        self.worker.log.connect(progress.add_log)
+        self.worker.log.connect(self.add_log)
+        self.worker.finished.connect(lambda r: self.on_collection_finished(progress, r))
+        self.worker.error.connect(lambda e: self.on_collection_error(progress, e))
+
+        progress.rejected.connect(self.worker.stop)
+        self.worker.start()
+        progress.exec_()
+
+    def collect_tick_data(self):
+        """Collect tick data"""
+        stock_codes_text = self.tick_stock_code_input.text().strip()
+        if not stock_codes_text:
+            QMessageBox.warning(self, "입력 오류", "종목코드를 입력해주세요")
+            return
+
+        stock_codes = [code.strip() for code in stock_codes_text.split(',')]
+        count = self.tick_count_spin.value()
+
+        reply = QMessageBox.question(
+            self, '확인',
+            f'틱 데이터를 수집합니다.\n'
+            f'종목: {len(stock_codes)}개\n'
+            f'개수: {count}틱\n'
+            f'계속하시겠습니까?',
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        self.add_log(f"틱 데이터 수집 시작 ({len(stock_codes)}개 종목, {count}틱)...")
+        self.set_buttons_enabled(False)
+
+        progress = ProgressDialog("틱 데이터 수집 중", self)
+
+        collector = StockCollector()
+        self.worker = DataCollectionWorker(
+            collector, 'tick_data',
+            stock_codes=stock_codes, count=count
+        )
+        self.worker.progress.connect(progress.set_progress)
+        self.worker.log.connect(progress.add_log)
+        self.worker.log.connect(self.add_log)
+        self.worker.finished.connect(lambda r: self.on_collection_finished(progress, r))
+        self.worker.error.connect(lambda e: self.on_collection_error(progress, e))
+
+        progress.rejected.connect(self.worker.stop)
+        self.worker.start()
+        progress.exec_()
+
     def set_buttons_enabled(self, enabled: bool):
         """Enable/disable all buttons"""
         self.collect_stocks_btn.setEnabled(enabled)
         self.collect_all_btn.setEnabled(enabled)
         self.collect_single_btn.setEnabled(enabled)
         self.update_btn.setEnabled(enabled)
+        self.collect_minute_btn.setEnabled(enabled)
+        self.collect_tick_btn.setEnabled(enabled)

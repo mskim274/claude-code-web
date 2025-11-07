@@ -22,6 +22,8 @@ class KiwoomAPIClient:
         self.port = port
         self.socket = None
         self.server_process = None
+        self.consecutive_timeouts = 0  # 연속 타임아웃 카운터
+        self.max_consecutive_timeouts = 5  # 최대 허용 연속 타임아웃
 
         if auto_start_server:
             self._start_server()
@@ -40,6 +42,14 @@ class KiwoomAPIClient:
                 "C:\\Python312-32 경로에 Python 3.12 32비트를 설치하세요."
             )
 
+        # 기존 서버 프로세스가 있으면 종료
+        if self.server_process:
+            try:
+                self.server_process.terminate()
+                self.server_process.wait(timeout=5)
+            except:
+                pass
+
         # 서버 스크립트 경로
         script_path = Path(__file__).parent / "kiwoom_api_server.py"
 
@@ -57,6 +67,29 @@ class KiwoomAPIClient:
         time.sleep(3)
 
         logger.info("Kiwoom API Server started")
+
+    def _restart_server(self):
+        """서버 재시작"""
+        logger.warning("Restarting Kiwoom API Server due to health issues...")
+
+        # 기존 소켓 정리
+        if self.socket:
+            try:
+                self.socket.close()
+            except:
+                pass
+            self.socket = None
+
+        # 서버 재시작
+        self._start_server()
+
+        # 재연결
+        self._connect()
+
+        # 카운터 리셋
+        self.consecutive_timeouts = 0
+
+        logger.info("Server restart completed")
 
     def _connect(self):
         """서버에 연결"""
@@ -91,20 +124,39 @@ class KiwoomAPIClient:
             response_data = self.socket.recv(1024 * 1024)  # 1MB
             response = json.loads(response_data.decode('utf-8'))
 
+            # 타임아웃 응답 확인
+            if response.get('timeout'):
+                self.consecutive_timeouts += 1
+                logger.warning(f"Server timeout detected ({self.consecutive_timeouts}/{self.max_consecutive_timeouts})")
+
+                # 연속 타임아웃이 임계값 초과 시 서버 재시작
+                if self.consecutive_timeouts >= self.max_consecutive_timeouts:
+                    logger.error(f"Too many consecutive timeouts, restarting server...")
+                    self._restart_server()
+            else:
+                # 정상 응답 시 카운터 리셋
+                self.consecutive_timeouts = 0
+
             return response
 
         except (socket.timeout, ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
             error_type = type(e).__name__
             logger.error(f"{error_type}: {e}")
-            logger.warning("Attempting to reconnect...")
+            self.consecutive_timeouts += 1
 
-            # 소켓 재연결 시도
-            try:
-                self.socket.close()
-            except:
-                pass
+            # 연속 연결 오류 시 서버 재시작
+            if self.consecutive_timeouts >= self.max_consecutive_timeouts:
+                logger.error(f"Too many connection errors, restarting server...")
+                self._restart_server()
+            else:
+                logger.warning("Attempting to reconnect...")
+                # 소켓 재연결 시도
+                try:
+                    self.socket.close()
+                except:
+                    pass
+                self._connect()
 
-            self._connect()
             raise ConnectionError(f"연결 재설정 완료 ({error_type})")
         except Exception as e:
             logger.error(f"Request error: {e}")
@@ -242,6 +294,30 @@ class KiwoomAPIClient:
             return response.get('data', [])
         else:
             logger.error(f"Failed to get minute price: {response.get('message')}")
+            return []
+
+    def get_tick_data(self, code, count=600):
+        """
+        틱 데이터 조회
+
+        Args:
+            code: 종목코드
+            count: 조회 개수 (최대 600)
+
+        Returns:
+            list: 틱 데이터 리스트
+        """
+        response = self._send_request({
+            'cmd': 'get_tick_data',
+            'code': code,
+            'count': count
+        })
+
+        if response.get('success'):
+            logger.info(f"Retrieved {len(response.get('data', []))} ticks for {code}")
+            return response.get('data', [])
+        else:
+            logger.error(f"Failed to get tick data: {response.get('message')}")
             return []
 
     def ping(self):

@@ -44,7 +44,7 @@ class KiwoomAPIServer:
 
         # Rate limiting (키움 API 제한: 초당 5회)
         self.last_request_time = 0
-        self.request_delay = 0.2  # 200ms (초당 5회)
+        self.request_delay = 1.0  # 1000ms (초당 1회) - 최대 안정성 설정
 
         # 시그널 연결
         self._connect_signals()
@@ -86,6 +86,8 @@ class KiwoomAPIServer:
             self.tr_data = self._parse_daily_price(trcode)
         elif rqname == "주식분봉조회":
             self.tr_data = self._parse_minute_price(trcode)
+        elif rqname == "주식틱차트조회":
+            self.tr_data = self._parse_tick_data(trcode)
 
         if self.request_event_loop:
             self.request_event_loop.exit()
@@ -140,6 +142,24 @@ class KiwoomAPIServer:
                 '고가': self._get_comm_data(trcode, "주식분봉조회", i, "고가"),
                 '저가': self._get_comm_data(trcode, "주식분봉조회", i, "저가"),
                 '거래량': self._get_comm_data(trcode, "주식분봉조회", i, "거래량"),
+            }
+            data_list.append(data)
+
+        return data_list
+
+    def _parse_tick_data(self, trcode):
+        """틱 데이터 파싱"""
+        data_list = []
+        cnt = self._get_repeat_cnt(trcode, "주식틱차트조회")
+
+        for i in range(cnt):
+            data = {
+                '체결시간': self._get_comm_data(trcode, "주식틱차트조회", i, "체결시간"),
+                '현재가': self._get_comm_data(trcode, "주식틱차트조회", i, "현재가"),
+                '거래량': self._get_comm_data(trcode, "주식틱차트조회", i, "거래량"),
+                '전일대비': self._get_comm_data(trcode, "주식틱차트조회", i, "전일대비"),
+                '매도호가': self._get_comm_data(trcode, "주식틱차트조회", i, "매도호가"),
+                '매수호가': self._get_comm_data(trcode, "주식틱차트조회", i, "매수호가"),
             }
             data_list.append(data)
 
@@ -240,7 +260,10 @@ class KiwoomAPIServer:
                 timer.stop()
                 return True
             else:
-                logger.warning(f"Request timeout for {rqname}")
+                logger.error(f"Request timeout for {rqname} - Server did not respond within 25 seconds")
+                # 타임아웃 시 빈 응답 설정하여 클라이언트가 대기하지 않도록 함
+                self.tr_data = []
+                self.tr_remained = False
                 return False
         else:
             logger.error(f"CommRqData failed: {ret}")
@@ -272,8 +295,18 @@ class KiwoomAPIServer:
 
             while True:
                 # TR 요청
-                if not self._comm_rq_data("주식일봉조회", "OPT10081", prev_next, "0101"):
-                    break
+                success = self._comm_rq_data("주식일봉조회", "OPT10081", prev_next, "0101")
+
+                if not success:
+                    # 타임아웃 또는 요청 실패
+                    if len(all_data) > 0:
+                        # 일부 데이터라도 수집된 경우 반환
+                        logger.warning(f"Request failed, returning {len(all_data)} days collected so far for {code}")
+                        return {'success': False, 'data': all_data, 'message': f'Timeout after {len(all_data)} days', 'timeout': True}
+                    else:
+                        # 데이터가 하나도 없는 경우 에러 반환
+                        logger.error(f"Request failed with no data for {code}")
+                        return {'success': False, 'data': [], 'message': 'Request timeout', 'timeout': True}
 
                 # 데이터 수집
                 if self.tr_data:
@@ -328,8 +361,18 @@ class KiwoomAPIServer:
 
             while True:
                 # TR 요청
-                if not self._comm_rq_data("주식분봉조회", "OPT10080", prev_next, "0102"):
-                    break
+                success = self._comm_rq_data("주식분봉조회", "OPT10080", prev_next, "0102")
+
+                if not success:
+                    # 타임아웃 또는 요청 실패
+                    if len(all_data) > 0:
+                        # 일부 데이터라도 수집된 경우 반환
+                        logger.warning(f"Request failed, returning {len(all_data)} minutes collected so far for {code}")
+                        return {'success': False, 'data': all_data, 'message': f'Timeout after {len(all_data)} minutes', 'timeout': True}
+                    else:
+                        # 데이터가 하나도 없는 경우 에러 반환
+                        logger.error(f"Request failed with no data for {code}")
+                        return {'success': False, 'data': [], 'message': 'Request timeout', 'timeout': True}
 
                 # 데이터 수집
                 if self.tr_data:
@@ -351,6 +394,46 @@ class KiwoomAPIServer:
 
         except Exception as e:
             logger.error(f"Failed to get minute price: {e}")
+            return {'success': False, 'data': [], 'message': str(e)}
+
+    def get_tick_data(self, code, count=600):
+        """
+        틱 데이터 조회
+
+        Args:
+            code: 종목코드
+            count: 조회 개수 (최대 600)
+
+        Returns:
+            dict: {'success': bool, 'data': list, 'message': str}
+        """
+        try:
+            # 최대 600틱 제한
+            if count > 600:
+                logger.warning(f"Tick count limited to 600 (requested: {count})")
+                count = 600
+
+            all_data = []
+
+            # 입력값 설정
+            self._set_input_value("종목코드", code)
+
+            # TR 요청 (틱 차트는 연속조회 불가)
+            success = self._comm_rq_data("주식틱차트조회", "OPT10079", 0, "0103")
+
+            if not success:
+                logger.error(f"Request failed for tick data of {code}")
+                return {'success': False, 'data': [], 'message': 'Request timeout', 'timeout': True}
+
+            # 데이터 수집
+            if self.tr_data:
+                all_data = self.tr_data[:count]
+
+            logger.info(f"Retrieved {len(all_data)} ticks for {code}")
+            return {'success': True, 'data': all_data, 'message': f'{len(all_data)} ticks retrieved'}
+
+        except Exception as e:
+            logger.error(f"Failed to get tick data: {e}")
             return {'success': False, 'data': [], 'message': str(e)}
 
     def handle_request(self, request):
@@ -381,6 +464,10 @@ class KiwoomAPIServer:
                 tick = request.get('tick', 1)
                 count = request.get('count', 900)
                 return self.get_minute_price(code, tick, count)
+            elif cmd == 'get_tick_data':
+                code = request.get('code')
+                count = request.get('count', 600)
+                return self.get_tick_data(code, count)
             elif cmd == 'ping':
                 return {'success': True, 'message': 'pong'}
             else:

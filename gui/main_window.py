@@ -10,6 +10,7 @@ from PyQt5.QtGui import QIcon
 from gui.widgets.dashboard import DashboardWidget
 from gui.widgets.stock_manager import StockManagerWidget
 from gui.widgets.data_collector import DataCollectorWidget
+from gui.widgets.data_viewer import DataViewerWidget
 from gui.widgets.backtest_panel import BacktestPanelWidget
 from gui.widgets.chart_viewer import ChartViewerWidget
 from gui.widgets.stock_detail import StockDetailWidget
@@ -50,6 +51,7 @@ class MainWindow(QMainWindow):
         self.stock_manager = StockManagerWidget()
         self.stock_detail = StockDetailWidget()
         self.data_collector = DataCollectorWidget()
+        self.data_viewer = DataViewerWidget()
         self.backtest_panel = BacktestPanelWidget()
         self.chart_viewer = ChartViewerWidget()
         self.settings = SettingsWidget()
@@ -59,6 +61,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.stock_manager, "종목 관리")
         self.tabs.addTab(self.stock_detail, "종목 상세")
         self.tabs.addTab(self.data_collector, "데이터 수집")
+        self.tabs.addTab(self.data_viewer, "데이터 조회")
         self.tabs.addTab(self.backtest_panel, "백테스트")
         self.tabs.addTab(self.chart_viewer, "차트 뷰어")
         self.tabs.addTab(self.settings, "설정")
@@ -111,6 +114,10 @@ class MainWindow(QMainWindow):
         collect_data_action = QAction('가격 데이터 수집', self)
         collect_data_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.data_collector))
         tools_menu.addAction(collect_data_action)
+
+        view_data_action = QAction('데이터 조회', self)
+        view_data_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.data_viewer))
+        tools_menu.addAction(view_data_action)
 
         run_backtest_action = QAction('백테스트 실행', self)
         run_backtest_action.triggered.connect(lambda: self.tabs.setCurrentWidget(self.backtest_panel))

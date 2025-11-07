@@ -100,6 +100,38 @@ class MinutePrice(Base):
         return f"<MinutePrice(stock={self.stock_code}, datetime={self.datetime}, close={self.close})>"
 
 
+class TickPrice(Base):
+    """틱 데이터 (체결 데이터)"""
+    __tablename__ = 'tick_prices'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stock_code = Column(String(10), ForeignKey('stocks.code'), nullable=False, comment='종목코드')
+    datetime = Column(DateTime, nullable=False, comment='체결시간')
+
+    price = Column(Integer, nullable=False, comment='체결가')
+    volume = Column(BigInteger, nullable=False, comment='체결량')
+
+    # 추가 정보
+    change = Column(Integer, comment='전일대비')
+    ask_volume = Column(BigInteger, comment='매도잔량')
+    bid_volume = Column(BigInteger, comment='매수잔량')
+    market_type = Column(String(10), comment='장구분 (장전, 장중, 장후)')
+
+    created_at = Column(DateTime, default=lambda: datetime.now(), comment='생성일시')
+
+    # Relationship
+    stock = relationship("Stock", backref="tick_prices")
+
+    # Indexes
+    __table_args__ = (
+        Index('idx_tick_stock_datetime', 'stock_code', 'datetime', unique=True),
+        Index('idx_tick_datetime', 'datetime'),
+    )
+
+    def __repr__(self):
+        return f"<TickPrice(stock={self.stock_code}, datetime={self.datetime}, price={self.price})>"
+
+
 class InvestorTrading(Base):
     """투자자별 매매 동향"""
     __tablename__ = 'investor_trading'
