@@ -27,6 +27,13 @@ pydantic-settings==2.1.0
 # Technical Analysis
 TA-Lib==0.4.28
 
+# Machine Learning
+lightgbm==4.1.0
+scikit-learn==1.3.2
+shap==0.43.0
+optuna==3.5.0
+joblib==1.3.2
+
 # Testing
 pytest==7.4.3
 pytest-cov==4.1.0
