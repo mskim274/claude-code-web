@@ -54,4 +54,13 @@ aiohttp==3.9.1
 # Crypto & Security
 cryptography==41.0.7
 
+# CLI & UI
+rich==13.7.0
+typer==0.9.0
+prompt-toolkit==3.0.43
+psutil==5.9.6
+
+# CLI Testing
+pytest-console-scripts==1.4.1
+
 # Others
