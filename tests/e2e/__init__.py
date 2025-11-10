@@ -1,3 +1,1 @@
-"""
-End-to-end tests for the kiwoom-auto system
-"""
+"""End-to-end tests"""

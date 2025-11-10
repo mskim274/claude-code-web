@@ -1,3 +1,1 @@
-"""
-Integration tests for the kiwoom-auto system
-"""
+"""Integration tests"""
