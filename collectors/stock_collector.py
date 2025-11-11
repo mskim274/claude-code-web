@@ -18,11 +18,21 @@ logger = logging.getLogger(__name__)
 class StockCollector:
     """주식 데이터 수집기"""
 
-    def __init__(self):
+    def __init__(self, use_kiwoom_api=True):
         """수집기 초기화"""
-        self.api = KiwoomAPIClient()
+        self.use_kiwoom_api = use_kiwoom_api
+        self.api = None
         self.is_logged_in = False
-        logger.info("StockCollector initialized")
+
+        if use_kiwoom_api:
+            try:
+                self.api = KiwoomAPIClient()
+                logger.info("StockCollector initialized with Kiwoom API")
+            except FileNotFoundError as e:
+                logger.warning(f"Kiwoom API not available: {e}")
+                logger.info("StockCollector initialized WITHOUT Kiwoom API")
+        else:
+            logger.info("StockCollector initialized WITHOUT Kiwoom API")
 
     def login(self):
         """키움 API 로그인"""

@@ -309,7 +309,7 @@ class DataCollectorWidget(QWidget):
         progress = ProgressDialog("종목 리스트 수집 중", self)
 
         # Create worker
-        collector = StockCollector()
+        collector = StockCollector(use_kiwoom_api=True)
         self.worker = DataCollectionWorker(collector, 'stock_list')
         self.worker.progress.connect(progress.set_progress)
         self.worker.log.connect(progress.add_log)
@@ -343,7 +343,7 @@ class DataCollectorWidget(QWidget):
 
         progress = ProgressDialog("일봉 데이터 수집 중", self)
 
-        collector = StockCollector()
+        collector = StockCollector(use_kiwoom_api=True)
         self.worker = DataCollectionWorker(collector, 'daily_prices', years=years)
         self.worker.progress.connect(progress.set_progress)
         self.worker.log.connect(progress.add_log)

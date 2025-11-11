@@ -19,7 +19,22 @@
       "Bash(echo:*)",
       "Bash(done)",
       "Bash(nul)",
-      "Bash(cmd /c \"mkdir collectors\\apis collectors\\apis\\kis collectors\\apis\\dart 2>nul\")"
+      "Bash(cmd /c \"mkdir collectors\\apis collectors\\apis\\kis collectors\\apis\\dart 2>nul\")",
+      "Bash(findstr:*)",
+      "Bash(where:*)",
+      "Bash(C:Usersms.kimAppDataLocalProgramsPythonPython312python.exe -m pip install -r requirements.txt)",
+      "Bash(cmd /c \"C:\\Users\\ms.kim\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pip install -r requirements.txt\")",
+      "Bash(cmd /c \"C:\\Users\\ms.kim\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -m pip install sqlalchemy pyqt5 pyqtwebengine pandas numpy matplotlib plotly pydantic backtrader python-dotenv\")",
+      "Bash(C:/Users/ms.kim/AppData/Local/Programs/Python/Python312/python.exe -m pip install:*)",
+      "Bash(C:/Users/ms.kim/AppData/Local/Programs/Python/Python312/python.exe:*)",
+      "Bash(C:/Python312-32/python.exe:*)",
+      "Bash(cmd /c \"if exist C:\\Python312-32\\python.exe (echo Found) else (echo Not found)\")",
+      "Bash(C:/Python312-32/Scripts/pywin32_postinstall.exe:*)",
+      "Bash(timeout:*)",
+      "Bash(codex exec:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
