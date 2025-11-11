@@ -55,12 +55,13 @@ class KiwoomAPIClient:
 
         logger.info(f"Starting Kiwoom API Server (32-bit)...")
 
-        # 서버 프로세스 시작
+        # 서버 프로세스 시작 (콘솔 창 없이)
         self.server_process = subprocess.Popen(
             [python32_path, str(script_path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NEW_CONSOLE  # 새 콘솔 창에서 실행
+            stdout=subprocess.DEVNULL,  # 출력을 읽지 않으므로 DEVNULL로 리다이렉트
+            stderr=subprocess.DEVNULL,  # 에러도 DEVNULL로 (서버 내부 로깅 사용)
+            creationflags=subprocess.CREATE_NO_WINDOW,  # 콘솔 창 숨김
+            shell=False
         )
 
         # 서버 시작 대기

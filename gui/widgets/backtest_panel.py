@@ -2,6 +2,7 @@
 Backtest panel widget - run and view backtest results
 """
 
+import logging
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QGroupBox, QLineEdit, QDateEdit, QSpinBox,
                              QComboBox, QTableWidget, QTableWidgetItem, QMessageBox,
@@ -14,7 +15,9 @@ from gui.components.chart_widget import ChartWidget
 from gui.utils.worker import BacktestWorker
 from gui.components.progress_dialog import ProgressDialog
 from backtest.engine import BacktestEngine
-from backtest.strategy import MovingAverageCrossStrategy
+from backtest.strategy import MovingAverageCrossStrategy, RSIStrategy, BollingerBandsStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class BacktestPanelWidget(QWidget):
@@ -70,7 +73,11 @@ class BacktestPanelWidget(QWidget):
         strategy_layout = QHBoxLayout()
         strategy_layout.addWidget(QLabel("전략:"))
         self.strategy_combo = QComboBox()
-        self.strategy_combo.addItems(['이동평균 교차'])
+        self.strategy_combo.addItems([
+            '이동평균 교차',
+            'RSI 전략',
+            '볼린저 밴드'
+        ])
         strategy_layout.addWidget(self.strategy_combo)
         strategy_layout.addStretch()
         config_layout.addLayout(strategy_layout)
@@ -164,16 +171,33 @@ class BacktestPanelWidget(QWidget):
         long_window = self.long_window_spin.value()
         capital = self.capital_spin.value()
 
-        if short_window >= long_window:
-            QMessageBox.warning(self, "파라미터 오류",
-                              "단기 이동평균이 장기 이동평균보다 작아야 합니다")
-            return
+        # Get selected strategy
+        strategy_name = self.strategy_combo.currentText()
 
-        # Create strategy
-        strategy = MovingAverageCrossStrategy(
-            short_window=short_window,
-            long_window=long_window
-        )
+        # Create strategy based on selection
+        if strategy_name == '이동평균 교차':
+            if short_window >= long_window:
+                QMessageBox.warning(self, "파라미터 오류",
+                                  "단기 이동평균이 장기 이동평균보다 작아야 합니다")
+                return
+            strategy = MovingAverageCrossStrategy(
+                short_window=short_window,
+                long_window=long_window
+            )
+        elif strategy_name == 'RSI 전략':
+            strategy = RSIStrategy(
+                rsi_period=14,
+                oversold=30,
+                overbought=70
+            )
+        elif strategy_name == '볼린저 밴드':
+            strategy = BollingerBandsStrategy(
+                period=20,
+                std_dev=2
+            )
+        else:
+            QMessageBox.warning(self, "전략 오류", "알 수 없는 전략입니다")
+            return
 
         # Create engine
         engine = BacktestEngine(
@@ -217,28 +241,50 @@ class BacktestPanelWidget(QWidget):
         if not results:
             return
 
-        # Summary table
-        metrics = [
-            ('초기 자본금', f"{results['initial_capital']:,.0f}"),
-            ('최종 자산', f"{results['final_value']:,.0f}"),
-            ('총 수익률', f"{results['total_return']:.2f}%"),
-            ('총 거래 횟수', str(results['total_trades'])),
-            ('수익 거래', str(results['winning_trades'])),
-            ('손실 거래', str(results['losing_trades'])),
-            ('승률', f"{results['win_rate']:.2f}%"),
-            ('최대 낙폭(MDD)', f"{results['max_drawdown']:.2f}%"),
-            ('샤프 비율', f"{results.get('sharpe_ratio', 0):.2f}"),
-        ]
+        try:
+            # Summary table
+            metrics = [
+                ('초기 자본금', f"{results['initial_capital']:,.0f}원"),
+                ('최종 자산', f"{results['final_capital']:,.0f}원"),
+                ('총 수익률', f"{results['total_return']:.2f}%"),
+                ('총 거래 횟수', f"{len(results.get('trades', []))}회"),
+            ]
 
-        self.summary_table.setRowCount(len(metrics))
-        for i, (metric, value) in enumerate(metrics):
-            self.summary_table.setItem(i, 0, QTableWidgetItem(metric))
-            value_item = QTableWidgetItem(value)
-            value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.summary_table.setItem(i, 1, value_item)
+            self.summary_table.setRowCount(len(metrics))
+            for i, (metric, value) in enumerate(metrics):
+                self.summary_table.setItem(i, 0, QTableWidgetItem(metric))
+                value_item = QTableWidgetItem(value)
+                value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.summary_table.setItem(i, 1, value_item)
 
-        # Chart
-        self.chart.plot_backtest_results(results)
+            # Chart - 자산 곡선 표시 (강화된 검증)
+            equity_curve = results.get('equity_curve')
+            if (equity_curve is not None and
+                isinstance(equity_curve, pd.DataFrame) and
+                not equity_curve.empty and
+                'portfolio_value' in equity_curve.columns):
+                self.chart.plot_backtest_results(results)
+            else:
+                self.chart.clear()
+                # Log specific reasons for not displaying chart
+                if equity_curve is None:
+                    logger.info("No equity curve data available for chart")
+                elif not isinstance(equity_curve, pd.DataFrame):
+                    logger.warning(f"equity_curve is not a DataFrame: {type(equity_curve)}")
+                elif equity_curve.empty:
+                    logger.warning("equity_curve DataFrame is empty")
+                elif 'portfolio_value' not in equity_curve.columns:
+                    logger.warning(f"equity_curve missing 'portfolio_value' column. Available columns: {list(equity_curve.columns)}")
+
+        except Exception as e:
+            # Log full error details for debugging
+            logger.exception("Error displaying backtest results")
+            # Show user-friendly message
+            QMessageBox.warning(
+                self,
+                "결과 표시 오류",
+                f"백테스트 결과 표시 중 오류가 발생했습니다.\n\n{str(e)}"
+            )
 
     def set_stock_code(self, code: str):
         """Set stock code from external source"""

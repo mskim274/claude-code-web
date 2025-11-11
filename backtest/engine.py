@@ -154,21 +154,50 @@ class BacktestEngine:
             self.strategy.sell(stock_code, final_price, position, data.index[-1])
 
         # 결과 저장
-        self.results = {
+        equity_df = pd.DataFrame(self.equity_curve)
+
+        # Validate and normalize equity curve DataFrame
+        if not equity_df.empty and 'date' in equity_df.columns:
+            # Convert date column to datetime if not already
+            equity_df['date'] = pd.to_datetime(equity_df['date'])
+            # Sort by date and remove duplicates
+            equity_df = equity_df.drop_duplicates(subset='date').sort_values('date')
+            # Set date as index
+            equity_df.set_index('date', inplace=True)
+        else:
+            # Empty or invalid equity curve
+            equity_df = None
+            logger.warning(f"Invalid equity curve for {stock_code}: empty or missing 'date' column")
+
+        # Calculate total return with division by zero guard
+        if self.initial_capital > 0:
+            total_return = ((self.strategy.cash - self.initial_capital) / self.initial_capital) * 100
+        else:
+            total_return = 0.0
+            logger.warning(f"Initial capital is zero for {stock_code}, total_return set to 0")
+
+        results = {
             'stock_code': stock_code,
             'strategy': self.strategy.name,
             'start_date': self.start_date,
             'end_date': self.end_date,
             'initial_capital': self.initial_capital,
             'final_capital': self.strategy.cash,
-            'total_return': ((self.strategy.cash - self.initial_capital) / self.initial_capital) * 100,
+            'total_return': total_return,
             'trades': self.strategy.trades,
-            'performance': performance
+            'performance': performance,
+            'equity_curve': equity_df  # 자산 곡선 데이터 추가
         }
 
-        logger.info(f"Backtest completed: Return={self.results['total_return']:.2f}%")
+        # Clear equity_curve list to free memory
+        self.equity_curve.clear()
 
-        return self.results
+        # Don't retain self.results to allow GC
+        self.results = None
+
+        logger.info(f"Backtest completed: Return={results['total_return']:.2f}%")
+
+        return results
 
     def get_equity_curve(self):
         """

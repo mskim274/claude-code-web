@@ -2,8 +2,11 @@
 Background worker threads for long-running operations
 """
 
+import logging
 from PyQt5.QtCore import QThread, pyqtSignal
 from typing import Callable, Any
+
+logger = logging.getLogger(__name__)
 
 
 class Worker(QThread):
@@ -319,7 +322,11 @@ class BacktestWorker(QThread):
                 self.progress.emit(100, "Backtest completed")
                 self.finished.emit(results)
             else:
-                self.error.emit("Backtest failed: No results")
+                logger.warning(f"Backtest returned no results for {self.stock_code}")
+                self.error.emit("백테스트 결과를 생성하지 못했습니다. 데이터를 확인해주세요.")
 
         except Exception as e:
-            self.error.emit(f"Backtest error: {str(e)}")
+            # Log full traceback for debugging
+            logger.exception(f"Backtest error for {self.stock_code}")
+            # Emit user-friendly error message
+            self.error.emit(f"백테스트 실행 중 오류 발생: {str(e)}")

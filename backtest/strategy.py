@@ -164,10 +164,82 @@ class MovingAverageCrossStrategy(BaseStrategy):
 
         # 신호 생성
         signals['signal'] = 0
-        signals['signal'][self.short_window:] = \
+        signals.loc[self.short_window:, 'signal'] = \
             (signals['short_ma'][self.short_window:] > signals['long_ma'][self.short_window:]).astype(int)
 
         # 포지션 변화 (1: 매수, -1: 매도)
         signals['positions'] = signals['signal'].diff()
 
+        return signals
+
+
+class RSIStrategy(BaseStrategy):
+    """RSI 전략"""
+
+    def __init__(self, rsi_period=14, oversold=30, overbought=70):
+        """
+        Args:
+            rsi_period: RSI 계산 기간
+            oversold: 과매도 기준선
+            overbought: 과매수 기준선
+        """
+        super().__init__(name=f"RSI_{rsi_period}_{oversold}_{overbought}")
+        self.rsi_period = rsi_period
+        self.oversold = oversold
+        self.overbought = overbought
+
+    def calculate_rsi(self, prices, period=14):
+        """RSI 계산"""
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+
+    def generate_signals(self, data):
+        """RSI 기반 신호 생성"""
+        signals = pd.DataFrame(index=data.index)
+        signals['price'] = data['close']
+        signals['rsi'] = self.calculate_rsi(data['close'], self.rsi_period)
+
+        # 신호 생성
+        signals['signal'] = 0
+        signals.loc[signals['rsi'] < self.oversold, 'signal'] = 1  # 매수
+        signals.loc[signals['rsi'] > self.overbought, 'signal'] = -1  # 매도
+
+        signals['positions'] = signals['signal'].diff()
+        return signals
+
+
+class BollingerBandsStrategy(BaseStrategy):
+    """볼린저 밴드 전략"""
+
+    def __init__(self, period=20, std_dev=2):
+        """
+        Args:
+            period: 이동평균 기간
+            std_dev: 표준편차 배수
+        """
+        super().__init__(name=f"BB_{period}_{std_dev}")
+        self.period = period
+        self.std_dev = std_dev
+
+    def generate_signals(self, data):
+        """볼린저 밴드 기반 신호 생성"""
+        signals = pd.DataFrame(index=data.index)
+        signals['price'] = data['close']
+
+        # 볼린저 밴드 계산
+        signals['middle_band'] = data['close'].rolling(window=self.period).mean()
+        rolling_std = data['close'].rolling(window=self.period).std()
+        signals['upper_band'] = signals['middle_band'] + (rolling_std * self.std_dev)
+        signals['lower_band'] = signals['middle_band'] - (rolling_std * self.std_dev)
+
+        # 신호 생성
+        signals['signal'] = 0
+        signals.loc[data['close'] < signals['lower_band'], 'signal'] = 1  # 하단 돌파 시 매수
+        signals.loc[data['close'] > signals['upper_band'], 'signal'] = -1  # 상단 돌파 시 매도
+
+        signals['positions'] = signals['signal'].diff()
         return signals
